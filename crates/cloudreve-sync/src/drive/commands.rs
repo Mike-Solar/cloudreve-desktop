@@ -116,6 +116,7 @@ pub enum MountCommand {
     Sync {
         local_paths: Vec<PathBuf>,
         mode: SyncMode,
+        user_initiated: bool,
     },
     Rename {
         source: PathBuf,
@@ -476,6 +477,7 @@ impl Mount {
                     .send(MountCommand::Sync {
                         local_paths: vec![destination.clone()],
                         mode: SyncMode::FullHierarchy,
+                        user_initiated: false,
                     })
                     .context("failed to send sync command")?;
                 Ok(())
@@ -691,6 +693,7 @@ impl Mount {
                 let command = MountCommand::Sync {
                     local_paths: vec![local_path.clone().into()],
                     mode: SyncMode::PathOnly,
+                    user_initiated: false,
                 };
                 if let Err(e) = self.command_tx.send(command) {
                     tracing::error!(target: "drive::commands", error = %e, "Failed to send Sync command");
@@ -760,6 +763,7 @@ impl Mount {
                 let command = MountCommand::Sync {
                     local_paths: vec![local_path.clone().into()],
                     mode: SyncMode::PathOnly,
+                    user_initiated: false,
                 };
                 if let Err(e) = self.command_tx.send(command) {
                     tracing::error!(target: "drive::commands", error = %e, "Failed to send Sync command");
@@ -809,6 +813,7 @@ impl Mount {
                         .send(MountCommand::Sync {
                             local_paths: vec![event.paths[1].clone()],
                             mode: SyncMode::FullHierarchy,
+                            user_initiated: false,
                         })
                         .context("failed to send sync command")?;
                     tracing::info!(target: "drive::commands", path = %event.paths[0].display(), count = count, "Cancelled tasks");
@@ -1103,6 +1108,7 @@ impl Mount {
                     let command = MountCommand::Sync {
                         local_paths: failed_paths.clone(),
                         mode: SyncMode::PathOnly,
+                        user_initiated: false,
                     };
                     if let Err(e) = self.command_tx.send(command) {
                         tracing::error!(
@@ -1125,6 +1131,7 @@ impl Mount {
                 let command = MountCommand::Sync {
                     local_paths: path_uri_mappings.values().cloned().collect(),
                     mode: SyncMode::PathOnly,
+                    user_initiated: false,
                 };
                 if let Err(e) = self.command_tx.send(command) {
                     tracing::error!(target: "drive::commands", error = %e, "Failed to send Sync command");

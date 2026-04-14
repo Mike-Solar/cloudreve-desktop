@@ -98,6 +98,7 @@ impl Mount {
                         let _ = s.command_tx.send(MountCommand::Sync {
                             local_paths: vec![sync_path.clone()],
                             mode: SyncMode::FullHierarchy,
+                            user_initiated: false,
                         });
                         tokio::time::sleep(Duration::from_secs(LONG_RETRY_DELAY_SECS)).await;
                         backoff.reset();
@@ -137,6 +138,7 @@ impl Mount {
                         let _ = self.command_tx.send(MountCommand::Sync {
                             local_paths: vec![sync_path.clone()],
                             mode: SyncMode::FullHierarchy,
+                            user_initiated: false,
                         });
                     }
                     FileEvent::KeepAlive => {
@@ -441,6 +443,7 @@ impl Mount {
                         .send(MountCommand::Sync {
                             local_paths: sync_paths,
                             mode,
+                            user_initiated: false,
                         })
                         .context("failed to send sync command")?;
                     return Ok(());

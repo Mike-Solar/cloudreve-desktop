@@ -522,12 +522,28 @@ impl Mount {
                         let _ = response.send(result);
                     });
                 }
-                MountCommand::Sync { mode, local_paths } => {
+                MountCommand::Sync { mode, local_paths, user_initiated } => {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
                     spawn(async move {
-                        if let Err(e) = s_clone.sync_paths(local_paths, mode).await {
-                            tracing::error!(target: "drive::mounts", id = %mount_id_clone, error = %e, "Failed to sync paths");
+                        match s_clone.sync_paths(local_paths, mode).await {
+                            Ok(_) => {
+                                if user_initiated {
+                                    toast::send_general_text_toast(
+                                        &t!("syncCompleteTitle"),
+                                        &t!("syncCompleteMessage"),
+                                    );
+                                }
+                            }
+                            Err(e) => {
+                                tracing::error!(target: "drive::mounts", id = %mount_id_clone, error = %e, "Failed to sync paths");
+                                if user_initiated {
+                                    toast::send_warning_toast(
+                                        &t!("syncFailedTitle"),
+                                        &format!("{}", e),
+                                    );
+                                }
+                            }
                         }
                     });
                 }

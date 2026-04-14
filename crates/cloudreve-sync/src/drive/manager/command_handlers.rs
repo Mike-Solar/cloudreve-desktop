@@ -63,6 +63,7 @@ impl DriveManager {
                             let _ = drive.command_tx.send(MountCommand::Sync {
                                 local_paths: paths,
                                 mode: mode,
+                                user_initiated: true,
                             });
                         } else {
                             tracing::error!(target: "drive::manager", "No drive found for path: {:?}", paths.get(0).unwrap());

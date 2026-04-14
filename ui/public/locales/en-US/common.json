@@ -16,6 +16,7 @@
     "localPathPlaceholder": "C:\\CloudDrive",
     "browse": "Browse",
     "selectFolder": "Select Folder",
+    "folderNotEmpty": "The selected folder is not empty. Please choose an empty folder.",
     "finish": "Finish",
     "settingUp": "We're setting things up...",
     "successTitle": "You're all set!",

@@ -16,6 +16,7 @@
     "localPathPlaceholder": "C:\\CloudDrive",
     "browse": "参照",
     "selectFolder": "フォルダを選択",
+    "folderNotEmpty": "選択したフォルダは空ではありません。空のフォルダを選択してください。",
     "finish": "完了",
     "settingUp": "設定中...",
     "successTitle": "設定完了！",

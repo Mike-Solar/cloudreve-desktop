@@ -16,6 +16,7 @@
     "localPathPlaceholder": "C:\\CloudDrive",
     "browse": "Examinar",
     "selectFolder": "Seleccionar carpeta",
+    "folderNotEmpty": "La carpeta seleccionada no está vacía. Por favor, elija una carpeta vacía.",
     "finish": "Finalizar",
     "settingUp": "Configurando...",
     "successTitle": "¡Listo!",

@@ -1,4 +1,4 @@
-import { Box, Button, CircularProgress, Container, InputAdornment, Snackbar, Typography } from "@mui/material";
+import { Alert, Box, Button, CircularProgress, Container, InputAdornment, Snackbar, Typography } from "@mui/material";
 import { openUrl, openPath } from "@tauri-apps/plugin-opener";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { invoke } from '@tauri-apps/api/core';
@@ -97,6 +97,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
   const [authorizeUrl, setAuthorizeUrl] = useState<string | null>(null);
   const [pageState, setPageState] = useState<PageState>(isReauthorize ? "url_input" : "url_input");
   const [localPath, setLocalPath] = useState("");
+  const [folderNotEmpty, setFolderNotEmpty] = useState(false);
   const [driveName, setDriveName] = useState(driveNameQuery ? decodeURIComponent(driveNameQuery) : "");
   const lastFetchedUrl = useRef<string>("");
   const currentIconUrl = useRef<string | undefined>(undefined);
@@ -276,11 +277,21 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
     setAuthorizeUrl(null);
     setPageState("url_input");
     setLocalPath("");
+    setFolderNotEmpty(false);
     pkceSessionRef.current = null;
   };
 
   const handleCloseSnackbar = () => {
     setSnackbarOpen(false);
+  };
+
+  const checkDirEmpty = async (path: string) => {
+    try {
+      const empty = await invoke<boolean>('is_dir_empty', { path });
+      setFolderNotEmpty(!empty);
+    } catch {
+      setFolderNotEmpty(false);
+    }
   };
 
   const handleBrowseFolder = async () => {
@@ -291,6 +302,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
     });
     if (selected) {
       setLocalPath(selected);
+      await checkDirEmpty(selected);
     }
   };
 
@@ -493,30 +505,41 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                 />
 
                 {!isReauthorize && (
-                  <FilledTextField
-                    fullWidth
-                    autoComplete="off"
-                    label={t("addDrive.localPath")}
-                    placeholder={t("addDrive.localPathPlaceholder")}
-                    value={localPath}
-                    onChange={(e) => setLocalPath(e.target.value)}
-                    variant="filled"
-                    required
-                    slotProps={{
-                      input: {
-                        endAdornment: (
-                          <InputAdornment position="end">
-                            <Button
-                              onClick={handleBrowseFolder}
-                              size="small"
-                            >
-                              {t("addDrive.browse")}
-                            </Button>
-                          </InputAdornment>
-                        ),
-                      },
-                    }}
-                  />
+                  <>
+                    <FilledTextField
+                      fullWidth
+                      autoComplete="off"
+                      label={t("addDrive.localPath")}
+                      placeholder={t("addDrive.localPathPlaceholder")}
+                      value={localPath}
+                      onChange={(e) => {
+                        setLocalPath(e.target.value);
+                        setFolderNotEmpty(false);
+                      }}
+                      onBlur={() => localPath && checkDirEmpty(localPath)}
+                      variant="filled"
+                      required
+                      slotProps={{
+                        input: {
+                          endAdornment: (
+                            <InputAdornment position="end">
+                              <Button
+                                onClick={handleBrowseFolder}
+                                size="small"
+                              >
+                                {t("addDrive.browse")}
+                              </Button>
+                            </InputAdornment>
+                          ),
+                        },
+                      }}
+                    />
+                    {folderNotEmpty && (
+                      <Alert severity="error" sx={{ mt: -1 }}>
+                        {t("addDrive.folderNotEmpty")}
+                      </Alert>
+                    )}
+                  </>
                 )}
 
                 <Button
@@ -524,6 +547,7 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                   variant="contained"
                   size="large"
                   fullWidth
+                  disabled={folderNotEmpty}
                 >
                   {isReauthorize ? t("addDrive.reauthorizeConfirm") : t("addDrive.finish")}
                 </Button>

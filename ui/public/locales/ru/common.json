@@ -16,6 +16,7 @@
     "localPathPlaceholder": "C:\\CloudDrive",
     "browse": "Обзор",
     "selectFolder": "Выбрать папку",
+    "folderNotEmpty": "Выбранная папка не пуста. Пожалуйста, выберите пустую папку.",
     "finish": "Готово",
     "settingUp": "Настройка...",
     "successTitle": "Готово!",

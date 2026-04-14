@@ -16,6 +16,7 @@
     "localPathPlaceholder": "C:\\CloudDrive",
     "browse": "瀏覽",
     "selectFolder": "選擇資料夾",
+    "folderNotEmpty": "所選資料夾不為空，請選擇一個空資料夾。",
     "finish": "完成",
     "settingUp": "正在設定中...",
     "successTitle": "設定完成！",

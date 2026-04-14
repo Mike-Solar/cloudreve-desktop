@@ -45,6 +45,19 @@ fn get_url_with_lang(base_path: &str) -> String {
     }
 }
 
+/// Check if a directory is empty (has no files or subdirectories)
+#[tauri::command]
+pub async fn is_dir_empty(path: String) -> CommandResult<bool> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() || !p.is_dir() {
+        return Ok(true);
+    }
+    match std::fs::read_dir(p) {
+        Ok(mut entries) => Ok(entries.next().is_none()),
+        Err(_) => Ok(true),
+    }
+}
+
 /// List all configured drives
 #[tauri::command]
 pub async fn list_drives(state: State<'_, AppStateHandle>) -> CommandResult<Vec<DriveConfig>> {

@@ -509,7 +509,7 @@ impl Mount {
             &remote_files,
             &local_files,
             &inventory_files,
-        );
+        ).await;
 
         tracing::debug!(
             target: "drive::sync",
@@ -911,7 +911,7 @@ impl Mount {
         Ok(entries)
     }
 
-    fn build_sync_plan(
+    async fn build_sync_plan(
         &self,
         _parent: &PathBuf,
         mode: SyncMode,
@@ -921,8 +921,18 @@ impl Mount {
         inventory_entries: &HashMap<PathBuf, FileMetadata>,
     ) -> SyncPlan {
         let mut plan = SyncPlan::default();
+        let matcher = self.ignore_matcher.read().await;
 
         for path in paths {
+            if matcher.is_match(path) {
+                tracing::trace!(
+                    target: "drive::sync",
+                    id = %self.id,
+                    path = %path.display(),
+                    "Skipping ignored path in sync plan"
+                );
+                continue;
+            }
             let local_info = local_files
                 .get(path)
                 .cloned()
@@ -1267,10 +1277,21 @@ impl Mount {
 
         let (remote_children, remote_files) = self.list_remote_children(directory).await?;
 
+        let matcher = self.ignore_matcher.read().await;
         let mut dedup: HashSet<PathBuf> = HashSet::new();
         for child in children.into_iter().chain(remote_children.into_iter()) {
+            if matcher.is_match(&child) {
+                tracing::trace!(
+                    target: "drive::sync",
+                    id = %self.id,
+                    path = %child.display(),
+                    "Skipping ignored path during child collection"
+                );
+                continue;
+            }
             dedup.insert(child);
         }
+        drop(matcher);
 
         Ok(CollectChildResult {
             paths: dedup.into_iter().collect(),

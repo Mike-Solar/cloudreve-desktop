@@ -143,7 +143,7 @@ pub struct Mount {
     pub id: String,
     pub event_blocker: EventBlocker,
     /// Compiled glob matcher for ignore patterns
-    pub ignore_matcher: IgnoreMatcher,
+    pub ignore_matcher: RwLock<IgnoreMatcher>,
     /// Status flags for the mount (credential expired, event push subscribed, etc.)
     status_flags: Mutex<MountStatusFlags>,
 }
@@ -254,7 +254,7 @@ impl Mount {
             fs_watcher: Mutex::new(None),
             sync_lock: Mutex::new(()),
             event_blocker: EventBlocker::new(),
-            ignore_matcher,
+            ignore_matcher: RwLock::new(ignore_matcher),
             status_flags: Mutex::new(MountStatusFlags::new()),
         }
     }
@@ -268,8 +268,8 @@ impl Mount {
         self.config.read().await.sync_path.clone()
     }
 
-    /// Get a reference to the ignore matcher
-    pub fn ignore_matcher(&self) -> &IgnoreMatcher {
+    /// Get a reference to the ignore matcher lock
+    pub fn ignore_matcher(&self) -> &RwLock<IgnoreMatcher> {
         &self.ignore_matcher
     }
 
@@ -283,8 +283,8 @@ impl Mount {
     ///
     /// # Returns
     /// `true` if the path matches any ignore pattern, `false` otherwise
-    pub fn is_ignored<P: AsRef<Path>>(&self, path: P) -> bool {
-        self.ignore_matcher.is_match(path)
+    pub async fn is_ignored<P: AsRef<Path>>(&self, path: P) -> bool {
+        self.ignore_matcher.read().await.is_match(path)
     }
 
     /// Check if a filename should be ignored based on the configured ignore patterns.
@@ -297,8 +297,26 @@ impl Mount {
     ///
     /// # Returns
     /// `true` if the filename matches any ignore pattern, `false` otherwise
-    pub fn is_ignored_filename(&self, filename: &str) -> bool {
-        self.ignore_matcher.is_match_filename(filename)
+    pub async fn is_ignored_filename(&self, filename: &str) -> bool {
+        self.ignore_matcher.read().await.is_match_filename(filename)
+    }
+
+    /// Update the ignore patterns for this drive.
+    ///
+    /// Validates the new patterns by building a new `IgnoreMatcher`, updates the
+    /// config, and swaps in the new matcher atomically.
+    ///
+    /// # Arguments
+    /// * `patterns` - New list of gitignore-style patterns
+    ///
+    /// # Errors
+    /// Returns an error if any pattern is invalid
+    pub async fn update_ignore_patterns(&self, patterns: Vec<String>) -> Result<()> {
+        let sync_path = self.config.read().await.sync_path.clone();
+        let new_matcher = IgnoreMatcher::new(&patterns, sync_path)?;
+        self.config.write().await.ignore_patterns = patterns;
+        *self.ignore_matcher.write().await = new_matcher;
+        Ok(())
     }
 
     /// Get a copy of the current status flags

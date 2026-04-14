@@ -83,6 +83,13 @@
     "reauthorize": "Повторная авторизация",
     "deleteDrive": "Удалить",
     "deleteDriveConfirm": "Вы уверены, что хотите удалить «{{name}}»?",
+    "ignorePatterns": "Шаблоны исключения",
+    "ignorePatternsTitle": "Редактировать шаблоны исключения",
+    "ignorePatternsDescription": "Введите шаблоны в стиле gitignore, по одному на строку. Совпадающие файлы не будут синхронизироваться.",
+    "ignorePatternsPlaceholder": "*.log\nnode_modules\n*.tmp",
+    "ignorePatternsError": "Недопустимые шаблоны: {{message}}",
+    "save": "Сохранить",
+    "cancel": "Отмена",
     "driveStatus": {
       "active": "Активен",
       "eventPushLost": "Потеряна связь с push-событиями",

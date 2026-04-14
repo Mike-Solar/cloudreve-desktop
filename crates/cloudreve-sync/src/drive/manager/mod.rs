@@ -87,10 +87,18 @@ impl DriveManager {
         // Add drives to manager
         let mut count = 0;
         for config in state.drives.iter() {
-            self.add_drive(config.clone())
-                .await
-                .context(format!("Failed to add drive: {}", config.id))?;
-            count += 1;
+            match self.add_drive(config.clone()).await {
+                Ok(_) => {
+                    count += 1;
+                }
+                Err(e) => {
+                    tracing::error!(target: "drive", drive_id = %config.id, error = ?e, "Failed to add drive, skipping");
+                    // crate::utils::toast::send_warning_toast(
+                    //     &t!("driveLoadFailed"),
+                    //     &format!("{}: {}", config.name, e),
+                    // );
+                }
+            }
         }
 
         if count == 0 {
@@ -380,6 +388,27 @@ impl DriveManager {
         tracing::info!(target: "drive::manager", drive_id = %id, "Drive credentials updated successfully");
 
         Ok(())
+    }
+
+    /// Get the ignore patterns for a drive
+    pub async fn get_ignore_patterns(&self, id: &str) -> Result<Vec<String>> {
+        let read_guard = self.drives.read().await;
+        let mount = read_guard
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", id))?;
+        let config = mount.config.read().await;
+        Ok(config.ignore_patterns.clone())
+    }
+
+    /// Update the ignore patterns for a drive.
+    ///
+    /// Validates patterns, updates the config, and rebuilds the `IgnoreMatcher`.
+    pub async fn update_ignore_patterns(&self, id: &str, patterns: Vec<String>) -> Result<()> {
+        let read_guard = self.drives.read().await;
+        let mount = read_guard
+            .get(id)
+            .ok_or_else(|| anyhow::anyhow!("Drive not found: {}", id))?;
+        mount.update_ignore_patterns(patterns).await
     }
 
     /// Enable/disable a drive

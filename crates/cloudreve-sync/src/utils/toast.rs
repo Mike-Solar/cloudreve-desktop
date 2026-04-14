@@ -35,6 +35,33 @@ pub fn send_general_text_toast(title: &str, message: &str) {
     notif.show().unwrap();
 }
 
+/// Send a toast notification with a warning icon.
+pub fn send_warning_toast(title: &str, message: &str) {
+    let notifier = ToastsNotifier::new(APP_NAME).unwrap();
+
+    let notif = NotificationBuilder::new()
+        .visual(
+            Text::create(1, title)
+                .with_align_center(true)
+                .with_wrap(true)
+                .with_style(HintStyle::Title),
+        )
+        .visual(
+            Text::create(2, message)
+                .with_align_center(true)
+                .with_wrap(true)
+                .with_style(HintStyle::Body),
+        )
+        .visual(
+            Image::create(3, "ms-appx:///Images/warning.svg")
+                .with_placement(Placement::AppLogoOverride)
+        )
+        .build(0, &notifier, "01", "warning")
+        .unwrap();
+
+    notif.show().unwrap();
+}
+
 /// Send a toast notification for token expiry.
 /// Uses drive_id as the tag to prevent duplicate notifications for the same drive.
 /// Respects the notify_credential_expired config setting.

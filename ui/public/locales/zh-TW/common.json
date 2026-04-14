@@ -83,6 +83,13 @@
     "reauthorize": "重新授權",
     "deleteDrive": "刪除",
     "deleteDriveConfirm": "確定要刪除「{{name}}」嗎？",
+    "ignorePatterns": "忽略規則",
+    "ignorePatternsTitle": "編輯忽略規則",
+    "ignorePatternsDescription": "輸入 gitignore 風格的匹配規則，每行一條。符合的檔案將不會被同步。",
+    "ignorePatternsPlaceholder": "*.log\nnode_modules\n*.tmp",
+    "ignorePatternsError": "規則無效：{{message}}",
+    "save": "儲存",
+    "cancel": "取消",
     "driveStatus": {
       "active": "活躍",
       "eventPushLost": "即時事件推送中斷",

@@ -195,6 +195,48 @@ pub async fn remove_drive(
     Ok(result)
 }
 
+/// Get ignore patterns for a drive
+#[tauri::command]
+pub async fn get_ignore_patterns(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+) -> CommandResult<Vec<String>> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    app_state
+        .drive_manager
+        .get_ignore_patterns(&drive_id)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Set ignore patterns for a drive
+#[tauri::command]
+pub async fn set_ignore_patterns(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+    patterns: Vec<String>,
+) -> CommandResult<()> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+
+    app_state
+        .drive_manager
+        .update_ignore_patterns(&drive_id, patterns)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    app_state
+        .drive_manager
+        .persist()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 /// Get sync status for a drive
 #[tauri::command]
 pub async fn get_sync_status(

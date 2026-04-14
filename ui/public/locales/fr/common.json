@@ -83,6 +83,13 @@
     "reauthorize": "Réautoriser",
     "deleteDrive": "Supprimer",
     "deleteDriveConfirm": "Êtes-vous sûr de vouloir supprimer « {{name}} » ?",
+    "ignorePatterns": "Filtres d'exclusion",
+    "ignorePatternsTitle": "Modifier les filtres d'exclusion",
+    "ignorePatternsDescription": "Saisissez des motifs de type gitignore, un par ligne. Les fichiers correspondants ne seront pas synchronisés.",
+    "ignorePatternsPlaceholder": "*.log\nnode_modules\n*.tmp",
+    "ignorePatternsError": "Motifs invalides : {{message}}",
+    "save": "Enregistrer",
+    "cancel": "Annuler",
     "driveStatus": {
       "active": "Actif",
       "eventPushLost": "Perte du push d'événements en temps réel",

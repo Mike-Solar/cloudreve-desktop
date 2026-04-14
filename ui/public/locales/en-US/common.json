@@ -83,6 +83,13 @@
     "reauthorize": "Reauthorize",
     "deleteDrive": "Delete",
     "deleteDriveConfirm": "Are you sure you want to delete \"{{name}}\"?",
+    "ignorePatterns": "Ignore Patterns",
+    "ignorePatternsTitle": "Edit Ignore Patterns",
+    "ignorePatternsDescription": "Enter gitignore-style patterns, one per line. Matching files will not be synced.",
+    "ignorePatternsPlaceholder": "*.log\nnode_modules\n*.tmp",
+    "ignorePatternsError": "Invalid patterns: {{message}}",
+    "save": "Save",
+    "cancel": "Cancel",
     "driveStatus": {
       "active": "Active",
       "eventPushLost": "Real time event push lost",

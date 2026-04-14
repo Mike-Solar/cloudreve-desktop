@@ -407,6 +407,18 @@ userIdMismatch:
   ru: "Аккаунт, использованный для повторной авторизации, не соответствует исходному владельцу диска. Пожалуйста, войдите с тем же аккаунтом."
   pl: "Konto użyte do ponownej autoryzacji nie odpowiada pierwotnemu właścicielowi dysku. Proszę zalogować się tym samym kontem."
   it: "L'account utilizzato per la riautorizzazione non corrisponde al proprietario originale dell'unità. Effettua l'accesso con lo stesso account."
+driveLoadFailed:
+  en-US: "Failed to load drive"
+  zh-CN: "加载云盘失败"
+  zh-TW: "載入雲端硬碟失敗"
+  ja: "ドライブの読み込みに失敗しました"
+  de: "Laufwerk konnte nicht geladen werden"
+  fr: "Échec du chargement du disque"
+  es: "Error al cargar la unidad"
+  ko: "드라이브 로드 실패"
+  ru: "Не удалось загрузить диск"
+  pl: "Nie udało się załadować dysku"
+  it: "Impossibile caricare l'unità"
 localPathCannotBeRootDrive:
   en-US: "The local path cannot be a root drive (e.g., E:\\). Please select a subfolder."
   zh-CN: "本地路径不能是根驱动器（如 E:\\）。请选择一个子文件夹。"

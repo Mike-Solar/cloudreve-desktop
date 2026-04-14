@@ -1,10 +1,17 @@
 import {
+  Alert,
   Box,
+  Button,
   Card,
   CardContent,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   Typography,
   LinearProgress,
   Stack,
+  TextField,
   Tooltip,
   Link,
   Divider,
@@ -16,6 +23,7 @@ import {
   Add as AddIcon,
   DeleteOutlineRounded,
   RefreshRounded,
+  FilterListRounded,
 } from "@mui/icons-material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -49,6 +57,10 @@ export default function DrivesSection() {
   const [drives, setDrives] = useState<DriveInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const isFetchingRef = useRef(false);
+  const [editingDriveId, setEditingDriveId] = useState<string | null>(null);
+  const [patternsText, setPatternsText] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [patternsError, setPatternsError] = useState<string | null>(null);
 
   const fetchDrives = useCallback(async () => {
     if (isFetchingRef.current) return;
@@ -124,6 +136,46 @@ export default function DrivesSection() {
     } catch (error) {
       console.error("Failed to open add drive window:", error);
     }
+  };
+
+  const handleEditIgnorePatterns = async (driveId: string) => {
+    try {
+      const patterns = await invoke<string[]>("get_ignore_patterns", { driveId });
+      setPatternsText(patterns.join("\n"));
+      setPatternsError(null);
+      setEditingDriveId(driveId);
+    } catch (error) {
+      console.error("Failed to get ignore patterns:", error);
+    }
+  };
+
+  const handleSavePatterns = async () => {
+    if (!editingDriveId) return;
+    setSaving(true);
+    setPatternsError(null);
+    try {
+      const patterns = patternsText
+        .split("\n")
+        .map((line) => line.trimEnd())
+        .filter((line) => line.length > 0);
+      await invoke("set_ignore_patterns", {
+        driveId: editingDriveId,
+        patterns,
+      });
+      setEditingDriveId(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setPatternsError(message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCloseDialog = () => {
+    setEditingDriveId(null);
+    setPatternsText("");
+    setPatternsError(null);
+    setSaving(false);
   };
 
   const getStatusColor = (status: DriveInfo["status"]) => {
@@ -359,6 +411,14 @@ export default function DrivesSection() {
                     </SecondaryButton>
                   )}
 
+                  <SecondaryButton
+                    size="small"
+                    startIcon={<FilterListRounded />}
+                    onClick={() => handleEditIgnorePatterns(drive.id)}
+                  >
+                    {t("settings.ignorePatterns")}
+                  </SecondaryButton>
+
                   <Box sx={{ flex: 1 }} />
 
                   <SecondaryErrorButton
@@ -383,6 +443,51 @@ export default function DrivesSection() {
       >
         {t("popup.newDrive")}
       </SecondaryButton>
+
+      <Dialog
+        open={editingDriveId !== null}
+        onClose={handleCloseDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>{t("settings.ignorePatternsTitle")}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {t("settings.ignorePatternsDescription")}
+          </Typography>
+          {patternsError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {t("settings.ignorePatternsError", { message: patternsError })}
+            </Alert>
+          )}
+          <TextField
+            multiline
+            fullWidth
+            rows={8}
+            value={patternsText}
+            onChange={(e) => setPatternsText(e.target.value)}
+            placeholder={t("settings.ignorePatternsPlaceholder")}
+            variant="outlined"
+            slotProps={{
+              input: {
+                sx: { fontFamily: "monospace", fontSize: 13 },
+              },
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDialog}>
+            {t("settings.cancel")}
+          </Button>
+          <Button
+            onClick={handleSavePatterns}
+            disabled={saving}
+            variant="contained"
+          >
+            {t("settings.save")}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

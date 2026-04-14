@@ -83,6 +83,13 @@
     "reauthorize": "Riautorizza",
     "deleteDrive": "Elimina",
     "deleteDriveConfirm": "Sei sicuro di voler eliminare \"{{name}}\"?",
+    "ignorePatterns": "Filtri di esclusione",
+    "ignorePatternsTitle": "Modifica filtri di esclusione",
+    "ignorePatternsDescription": "Inserisci pattern in stile gitignore, uno per riga. I file corrispondenti non verranno sincronizzati.",
+    "ignorePatternsPlaceholder": "*.log\nnode_modules\n*.tmp",
+    "ignorePatternsError": "Pattern non validi: {{message}}",
+    "save": "Salva",
+    "cancel": "Annulla",
     "driveStatus": {
       "active": "Attivo",
       "eventPushLost": "Connessione push eventi in tempo reale persa",

@@ -83,6 +83,13 @@
     "reauthorize": "Ponownie autoryzuj",
     "deleteDrive": "Usuń",
     "deleteDriveConfirm": "Czy na pewno chcesz usunąć „{{name}}"?",
+    "ignorePatterns": "Wzorce wykluczeń",
+    "ignorePatternsTitle": "Edytuj wzorce wykluczeń",
+    "ignorePatternsDescription": "Wprowadź wzorce w stylu gitignore, po jednym w wierszu. Pasujące pliki nie będą synchronizowane.",
+    "ignorePatternsPlaceholder": "*.log\nnode_modules\n*.tmp",
+    "ignorePatternsError": "Nieprawidłowe wzorce: {{message}}",
+    "save": "Zapisz",
+    "cancel": "Anuluj",
     "driveStatus": {
       "active": "Aktywny",
       "eventPushLost": "Utracono połączenie z powiadomieniami w czasie rzeczywistym",

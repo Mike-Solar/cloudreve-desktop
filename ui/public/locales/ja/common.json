@@ -83,6 +83,13 @@
     "reauthorize": "再認証",
     "deleteDrive": "削除",
     "deleteDriveConfirm": "「{{name}}」を削除してもよろしいですか？",
+    "ignorePatterns": "除外パターン",
+    "ignorePatternsTitle": "除外パターンの編集",
+    "ignorePatternsDescription": "gitignore 形式のパターンを1行に1つずつ入力してください。一致したファイルは同期されません。",
+    "ignorePatternsPlaceholder": "*.log\nnode_modules\n*.tmp",
+    "ignorePatternsError": "パターンが無効です：{{message}}",
+    "save": "保存",
+    "cancel": "キャンセル",
     "driveStatus": {
       "active": "アクティブ",
       "eventPushLost": "リアルタイムイベントプッシュが切断",

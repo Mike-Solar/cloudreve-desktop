@@ -358,6 +358,24 @@ impl Mount {
 
         tracing::debug!(target: "drive::mounts", uri = %uri.to_string(), "Fetch file list from cloudreve");
 
+        // Filter out files matching ignore patterns
+        let matcher = self.ignore_matcher.read().await;
+        if !matcher.is_empty() {
+            placehodlers.retain(|file| {
+                let local_file_path = path.join(&file.name);
+                let ignored = matcher.is_match(&local_file_path);
+                if ignored {
+                    tracing::trace!(
+                        target: "drive::commands",
+                        path = %local_file_path.display(),
+                        "Filtering ignored file from placeholders"
+                    );
+                }
+                !ignored
+            });
+        }
+        drop(matcher);
+
         Ok(GetPlacehodlerResult {
             files: placehodlers,
             local_path: path.clone(),
@@ -406,10 +424,12 @@ impl Mount {
 
     pub async fn rename_completed(&self, source: PathBuf, destination: PathBuf) -> Result<()> {
         // If source or destination is ignored, do nothing
-        if self.ignore_matcher.is_match(&source) || self.ignore_matcher.is_match(&destination) {
+        let matcher = self.ignore_matcher.read().await;
+        if matcher.is_match(&source) || matcher.is_match(&destination) {
             tracing::debug!(target: "drive::commands", source = %source.display(), destination = %destination.display(), "Ignoring rename operation");
             return Ok(());
         }
+        drop(matcher);
 
         // Commit rename in inventory
         self.inventory
@@ -482,10 +502,12 @@ impl Mount {
         }
 
         // If source or target is ignored, do nothing
-        if self.ignore_matcher.is_match(&source) || self.ignore_matcher.is_match(&target) {
+        let matcher = self.ignore_matcher.read().await;
+        if matcher.is_match(&source) || matcher.is_match(&target) {
             tracing::debug!(target: "drive::commands", source = %source.display(), target = %target.display(), "Ignoring rename operation");
             return Ok(());
         }
+        drop(matcher);
 
         if !source.starts_with(&sync_path) {
             // Target is being moved into sync root - block the create event
@@ -566,11 +588,12 @@ impl Mount {
             let filtered_events = self.event_blocker.filter_events(events, &event_kind);
 
             // Filter out events that are ignored
+            let matcher = self.ignore_matcher.read().await;
             let filtered_events: Vec<Event> = filtered_events
                 .into_iter()
                 .filter(|event| {
                     let dominated_path = &event.paths[0];
-                    let is_ignored = self.ignore_matcher.is_match(dominated_path);
+                    let is_ignored = matcher.is_match(dominated_path);
                     if is_ignored {
                         tracing::trace!(
                             target: "drive::commands",
@@ -581,6 +604,7 @@ impl Mount {
                     !is_ignored
                 })
                 .collect();
+            drop(matcher);
 
             if filtered_events.is_empty() {
                 continue;

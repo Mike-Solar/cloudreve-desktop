@@ -14,24 +14,21 @@ Status: implemented.
   - Keep local filesystem watching and upload/download task queues active.
 - Do not expose placeholder semantics on Linux yet.
 
-## Phase 2: KDE Placeholder Support
+## Phase 2: Linux Full Sync Only
 
-Status: planned.
+Status: implemented.
 
-- Detect KDE/Plasma at runtime using environment signals such as `XDG_CURRENT_DESKTOP`, `KDE_FULL_SESSION`, and `DESKTOP_SESSION`.
-- Add a Linux platform capability model:
-  - `FullSyncOnly` for GNOME, XFCE, Cinnamon, generic Wayland/X11, and unknown desktops.
-  - `KdePlaceholders` for supported KDE environments.
-- Implement KDE placeholder integration as a separate backend from Windows CFAPI.
-- Keep non-KDE desktops on the Phase 1 full sync path.
-- Add clear logging when KDE placeholder support is unavailable or disabled.
+- Linux does not implement Windows-style on-demand placeholder sync.
+- KDE does not receive a separate placeholder backend.
+- All Linux desktop environments use the Phase 1 full sync path.
+- Linux sync roots are ordinary local directories watched by the filesystem watcher.
+- Remote files are downloaded fully instead of represented as dehydrated placeholders.
+- Placeholder semantics remain Windows-only through CFAPI.
 
 ## Phase 3: UI And Packaging
 
 Status: planned.
 
-- Surface the active Linux sync mode in settings.
-- Disable placeholder-only options outside KDE.
 - Add Linux autostart support through freedesktop `.desktop` files.
-- Add Linux packaging metadata and install hooks for KDE integration.
-- Add integration tests for full sync and targeted KDE capability detection.
+- Add Linux packaging metadata.
+- Add integration tests for Linux full sync behavior.

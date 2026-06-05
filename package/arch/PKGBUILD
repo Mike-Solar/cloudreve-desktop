@@ -6,6 +6,11 @@ pkgdesc='Cloudreve Desktop Sync Client'
 arch=('x86_64')
 url='https://github.com/cloudreve/desktop'
 license=('MIT')
+# Arch's global makepkg.conf may enable LTO. The Rust `ring` crate embeds
+# native C/ASM objects in its rlib, and rust-lld can fail to link those objects
+# under makepkg LTO with `ring_core_*` undefined symbols. Keep LTO disabled for
+# this package; a clean target directory does not fix that linker failure.
+options=(!lto)
 depends=(
   'gtk3'
   'hicolor-icon-theme'
@@ -33,6 +38,13 @@ build() {
   cd "desktop-${pkgver}"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
+  # `ring` compiles bundled C/ASM sources and links them into Rust. If Arch's
+  # makepkg LTO flags leak into those CFLAGS, GCC emits LTO objects that
+  # rust-lld cannot consume reliably, resulting in `ring_core_*` undefined
+  # symbols at the final binary link step. Strip the known Arch LTO flag here
+  # as a defensive guard in addition to package-level `options=(!lto)`.
+  export CFLAGS="${CFLAGS//-flto=auto/}"
+  export CXXFLAGS="${CXXFLAGS//-flto=auto/}"
 
   # makepkg reuses srcdir between builds unless the caller passes -C. Remove any
   # stale node_modules tree first so a previous pnpm/yarn-mixed install cannot
@@ -40,7 +52,10 @@ build() {
   rm -rf ui/node_modules
   yarn --cwd ui install --frozen-lockfile
   yarn --cwd ui run build
-  cargo build --release -p cloudreve-desktop
+  # Enable Tauri's custom protocol for production builds. Without this feature,
+  # tauri's build script marks the binary as `cfg(dev)`, so the installed app
+  # tries to load `build.devUrl` (localhost:5173) instead of bundled assets.
+  cargo build --release -p cloudreve-desktop --features tauri/custom-protocol
 }
 
 package() {

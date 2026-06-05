@@ -1,6 +1,12 @@
 use anyhow::Context;
-use cloudreve_sync::{ConfigManager, DriveManager, EventBroadcaster, LogConfig, LogGuard, shellext::shell_service::ServiceHandle};
-use std::sync::{Arc, Mutex};
+use cloudreve_sync::{
+    drive::sync::SyncMode, shellext::shell_service::ServiceHandle, ConfigManager, DriveManager,
+    EventBroadcaster, LogConfig, LogGuard,
+};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+};
 use tauri::{
     async_runtime::spawn,
     menu::{Menu, MenuItem},
@@ -54,6 +60,11 @@ pub struct AppState {
 
 /// Global cell to store the app state once initialization is complete
 static APP_STATE: OnceCell<AppState> = OnceCell::const_new();
+
+enum CliAction {
+    SyncNow(Vec<PathBuf>),
+    ViewOnline(PathBuf),
+}
 
 /// Initialize the sync service (DriveManager, shell services, etc.)
 async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
@@ -121,6 +132,10 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
 
     tracing::info!(target: "main", "Tauri application setup complete");
 
+    if let Some(action) = parse_cloudreve_cli_action(std::env::args().collect::<Vec<_>>()) {
+        dispatch_cli_action(action).await;
+    }
+
     Ok(())
 }
 
@@ -158,6 +173,65 @@ fn spawn_event_bridge(app_handle: AppHandle, event_broadcaster: &EventBroadcaste
     });
 }
 
+fn parse_cloudreve_cli_action(args: Vec<String>) -> Option<CliAction> {
+    const SYNC_FLAG: &str = "--cloudreve-sync-now";
+    const VIEW_FLAG: &str = "--cloudreve-view-online";
+
+    let mut iter = args.into_iter().skip(1);
+    while let Some(arg) = iter.next() {
+        match arg.as_str() {
+            SYNC_FLAG => {
+                let paths = iter
+                    .by_ref()
+                    .take_while(|value| !value.starts_with("--cloudreve-"))
+                    .map(PathBuf::from)
+                    .collect::<Vec<_>>();
+                if !paths.is_empty() {
+                    return Some(CliAction::SyncNow(paths));
+                }
+            }
+            VIEW_FLAG => {
+                if let Some(path) = iter.next() {
+                    return Some(CliAction::ViewOnline(PathBuf::from(path)));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    None
+}
+
+async fn dispatch_cli_action(action: CliAction) {
+    let Some(state) = APP_STATE.get() else {
+        tracing::warn!(target: "main", "Cannot dispatch CLI action before app state is ready");
+        return;
+    };
+
+    let result = match action {
+        CliAction::SyncNow(paths) => state
+            .drive_manager
+            .dispatch_sync_now(paths, SyncMode::FullHierarchy),
+        CliAction::ViewOnline(path) => state.drive_manager.dispatch_view_online(path),
+    };
+
+    if let Err(error) = result {
+        tracing::error!(target: "main", error = %error, "Failed to dispatch CLI action");
+    }
+}
+
+fn handle_cloudreve_cli_args(args: Vec<String>) -> bool {
+    let Some(action) = parse_cloudreve_cli_action(args) else {
+        return false;
+    };
+
+    spawn(async move {
+        dispatch_cli_action(action).await;
+    });
+
+    true
+}
+
 /// Perform graceful shutdown
 async fn shutdown() {
     tracing::info!(target: "main", "Initiating shutdown...");
@@ -193,13 +267,8 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
         true,
         None::<&str>,
     )?;
-    let settings_i = MenuItem::with_id(
-        app,
-        "settings",
-        t!("settings").as_ref(),
-        true,
-        None::<&str>,
-    )?;
+    let settings_i =
+        MenuItem::with_id(app, "settings", t!("settings").as_ref(), true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", t!("quit").as_ref(), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show_i, &add_drive_i, &settings_i, &quit_i])?;
 
@@ -253,6 +322,10 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             tracing::info!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
+            if handle_cloudreve_cli_args(argv.clone()) {
+                return;
+            }
+
             if argv.len() > 1 {
                 let _ = app.emit("deeplink", argv[1].clone());
                 show_add_drive_window_impl(app);
@@ -313,6 +386,7 @@ pub fn run() {
             commands::set_notify_file_conflict,
             commands::set_fast_popup_launch,
             commands::get_general_settings,
+            commands::get_platform_capabilities,
             commands::set_log_to_file,
             commands::set_log_level,
             commands::set_log_max_files,

@@ -64,6 +64,26 @@
     "language": "Язык",
     "languageDescription": "Выберите язык интерфейса приложения",
     "languageAuto": "По умолчанию системы",
+    "syncCapabilitySettings": "Sync capability",
+    "syncModeTitle": "Sync mode",
+    "placeholderSupport": "Placeholder support",
+    "placeholderAvailable": "Available",
+    "placeholderUnavailable": "Unavailable",
+    "syncMode": {
+      "windows_cloud_files": "Windows placeholders",
+      "kde_placeholders": "KDE placeholders",
+      "full_sync_only": "Full sync"
+    },
+    "desktopEnvironment": {
+      "windows": "Windows",
+      "macos": "macOS",
+      "kde": "KDE",
+      "gnome": "GNOME",
+      "xfce": "XFCE",
+      "cinnamon": "Cinnamon",
+      "mate": "MATE",
+      "unknown": "Unknown"
+    },
     "notificationSettings": "Уведомления",
     "notifyCredentialExpired": "Уведомление об истечении учётных данных",
     "notifyCredentialExpiredDescription": "Показывать уведомление при истечении учётных данных диска",

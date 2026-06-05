@@ -7,6 +7,7 @@ import {
   Select,
   MenuItem,
   FormControl,
+  Chip,
 } from "@mui/material";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -169,6 +170,46 @@ function SettingActionItem({
   );
 }
 
+interface SettingReadOnlyItemProps {
+  title: string;
+  description?: string;
+  value: string;
+  isLast?: boolean;
+}
+
+function SettingReadOnlyItem({
+  title,
+  description,
+  value,
+  isLast,
+}: SettingReadOnlyItemProps) {
+  return (
+    <>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          py: 1.5,
+          px: 2,
+          gap: 2,
+        }}
+      >
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Typography variant="body2">{title}</Typography>
+          {description && (
+            <Typography variant="caption" color="text.secondary">
+              {description}
+            </Typography>
+          )}
+        </Box>
+        <Chip label={value} size="small" variant="outlined" />
+      </Box>
+      {!isLast && <Divider />}
+    </>
+  );
+}
+
 interface SettingsGroupProps {
   title: string;
   children: React.ReactNode;
@@ -213,6 +254,22 @@ interface GeneralSettings {
   language: string | null;
 }
 
+interface KdePlaceholderBackend {
+  detected: boolean;
+  available: boolean;
+  reason: string;
+}
+
+interface PlatformCapabilities {
+  os: string;
+  desktop_environment: string;
+  sync_mode: string;
+  placeholders_supported: boolean;
+  full_sync_supported: boolean;
+  reason: string;
+  kde_placeholder_backend?: KdePlaceholderBackend;
+}
+
 const LOG_LEVELS = [
   { value: "trace", label: "Trace" },
   { value: "debug", label: "Debug" },
@@ -239,14 +296,17 @@ export default function GeneralSection() {
   const [logMaxFiles, setLogMaxFiles] = useState(5);
   const [logDir, setLogDir] = useState("");
   const [language, setLanguage] = useState<string | null>(null);
+  const [platformCapabilities, setPlatformCapabilities] =
+    useState<PlatformCapabilities | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        const [enabled, settings] = await Promise.all([
+        const [enabled, settings, capabilities] = await Promise.all([
           invoke<boolean>("get_auto_start_enabled"),
           invoke<GeneralSettings>("get_general_settings"),
+          invoke<PlatformCapabilities>("get_platform_capabilities"),
         ]);
         setAutoStart(enabled);
         setNotifyCredentialExpired(settings.notify_credential_expired);
@@ -257,6 +317,7 @@ export default function GeneralSection() {
         setLogMaxFiles(settings.log_max_files);
         setLogDir(settings.log_dir);
         setLanguage(settings.language);
+        setPlatformCapabilities(capabilities);
       } catch (error) {
         console.error("Failed to load settings:", error);
       } finally {
@@ -374,6 +435,23 @@ export default function GeneralSection() {
 
   // Get the current language value for the select, "auto" if null
   const currentLanguageValue = language ?? "auto";
+  const platformSyncMode = platformCapabilities
+    ? t(`settings.syncMode.${platformCapabilities.sync_mode}`, {
+        defaultValue: platformCapabilities.sync_mode,
+      })
+    : t("settings.loading");
+  const desktopEnvironment = platformCapabilities
+    ? t(`settings.desktopEnvironment.${platformCapabilities.desktop_environment}`, {
+        defaultValue: platformCapabilities.desktop_environment,
+      })
+    : t("settings.loading");
+  const placeholderStatus = platformCapabilities?.placeholders_supported
+    ? t("settings.placeholderAvailable")
+    : t("settings.placeholderUnavailable");
+  const platformDescription = platformCapabilities
+    ? `${platformCapabilities.os} / ${desktopEnvironment}. ${platformCapabilities.reason}`
+    : undefined;
+  const kdeBackend = platformCapabilities?.kde_placeholder_backend;
 
   return (
     <Box>
@@ -410,6 +488,21 @@ export default function GeneralSection() {
           ]}
           onChange={handleLanguageChange}
           disabled={loading}
+          isLast={true}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup title={t("settings.syncCapabilitySettings")}>
+        <SettingReadOnlyItem
+          title={t("settings.syncModeTitle")}
+          description={platformDescription}
+          value={platformSyncMode}
+          isLast={false}
+        />
+        <SettingReadOnlyItem
+          title={t("settings.placeholderSupport")}
+          description={kdeBackend?.reason ?? platformCapabilities?.reason}
+          value={placeholderStatus}
           isLast={true}
         />
       </SettingsGroup>

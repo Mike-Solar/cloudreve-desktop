@@ -1,8 +1,8 @@
+use crate::cfapi::root::{Connection, SyncRootId};
 #[cfg(windows)]
 use crate::cfapi::root::{
     HydrationType, PopulationType, SecurityId, Session, SyncRootIdBuilder, SyncRootInfo,
 };
-use crate::cfapi::root::{Connection, SyncRootId};
 #[cfg(windows)]
 use crate::drive::callback::CallbackHandler;
 use crate::drive::commands::ManagerCommand;
@@ -385,85 +385,105 @@ impl Mount {
         #[cfg(not(windows))]
         {
             let sync_path = self.config.read().await.sync_path.clone();
+            #[cfg(target_os = "linux")]
+            {
+                let backend = crate::linux::LinuxSyncBackend::prepare_current()?;
+                backend.log_selection(&self.id);
+                backend.prepare_sync_root(&sync_path)?;
+                self.start_fs_watcher().await?;
+                if backend.should_run_initial_full_sync() {
+                    self.sync_paths(vec![sync_path], crate::drive::sync::SyncMode::FullHierarchy)
+                        .await?;
+                }
+                return Ok(());
+            }
+
+            #[cfg(not(target_os = "linux"))]
             std::fs::create_dir_all(&sync_path).context("failed to create sync directory")?;
+            #[cfg(not(target_os = "linux"))]
             self.start_fs_watcher().await?;
+            #[cfg(not(target_os = "linux"))]
             self.sync_paths(vec![sync_path], crate::drive::sync::SyncMode::FullHierarchy)
                 .await?;
+            #[cfg(not(target_os = "linux"))]
             return Ok(());
         }
 
         #[cfg(windows)]
         {
-        if !StorageProviderSyncRootManager::IsSupported()
-            .context("Cloud Filter API is not supported")?
-        {
-            return Err(anyhow::anyhow!("Cloud Filter API is not supported"));
-        }
-
-        let mut write_guard = self.config.write().await;
-
-        // if sync root id is not set, generate one
-        if write_guard.sync_root_id.is_none() {
-            write_guard.sync_root_id = Some(
-                generate_sync_root_id(
-                    &write_guard.instance_url,
-                    &write_guard.name,
-                    &write_guard.user_id,
-                    &write_guard.sync_path,
-                )
-                .context("failed to generate sync root id")?,
-            );
-        }
-
-        drop(write_guard);
-        let config = self.config.read().await;
-
-        let sync_root_id = config.sync_root_id.as_ref().unwrap();
-
-        // Register sync root if not registered
-        if !sync_root_id.is_registered()? {
-            tracing::info!(target: "drive::mounts", id = %self.id, "Registering sync root");
-            let mut sync_root_info = SyncRootInfo::default();
-            sync_root_info.set_display_name(config.name.clone());
-            sync_root_info.set_hydration_type(HydrationType::Full);
-            sync_root_info.set_population_type(PopulationType::Full);
-            if let Some(icon_path) = config.icon_path.as_ref() {
-                sync_root_info.set_icon(format!("{},0", icon_path));
+            if !StorageProviderSyncRootManager::IsSupported()
+                .context("Cloud Filter API is not supported")?
+            {
+                return Err(anyhow::anyhow!("Cloud Filter API is not supported"));
             }
-            sync_root_info.set_version("1.0.0");
-            sync_root_info
-                .set_recycle_bin_uri(recycle_bin_url(&config).unwrap_or_else(|_| "https://cloudreve.org".to_string()))
-                .context("failed to set recycle bin uri")?;
-            sync_root_info
-                .set_path(Path::new(&config.sync_path))
-                .context("failed to set sync root path")?;
-            sync_root_info.add_custom_state(t!("shared").as_ref(), 1)?;
-            sync_root_info.add_custom_state(t!("accessible").as_ref(), 2)?;
-            sync_root_id
-                .register(sync_root_info)
-                .context("failed to register sync root")?;
-        }
 
-        // Add to search indexer for state management
-        if let Err(e) = sync_root_id.index() {
-            tracing::warn!(target: "drive::mounts", id = %self.id, error = %e, "Failed to add sync root to search indexer");
-        }
+            let mut write_guard = self.config.write().await;
 
-        tracing::info!(target: "drive::mounts",sync_path = %config.sync_path.display(), id = %self.id, "Connecting to sync root");
-        let connection = Session::new()
-            .connect(
-                &config.sync_path,
-                CallbackHandler::new(
-                    self.command_tx.clone(),
-                    self.id.clone(),
-                    self.inventory.clone(),
-                ),
-            )
-            .context("failed to connect to sync root")?;
+            // if sync root id is not set, generate one
+            if write_guard.sync_root_id.is_none() {
+                write_guard.sync_root_id = Some(
+                    generate_sync_root_id(
+                        &write_guard.instance_url,
+                        &write_guard.name,
+                        &write_guard.user_id,
+                        &write_guard.sync_path,
+                    )
+                    .context("failed to generate sync root id")?,
+                );
+            }
 
-        self.connection = Some(connection);
-        self.start_fs_watcher().await?;
-        Ok(())
+            drop(write_guard);
+            let config = self.config.read().await;
+
+            let sync_root_id = config.sync_root_id.as_ref().unwrap();
+
+            // Register sync root if not registered
+            if !sync_root_id.is_registered()? {
+                tracing::info!(target: "drive::mounts", id = %self.id, "Registering sync root");
+                let mut sync_root_info = SyncRootInfo::default();
+                sync_root_info.set_display_name(config.name.clone());
+                sync_root_info.set_hydration_type(HydrationType::Full);
+                sync_root_info.set_population_type(PopulationType::Full);
+                if let Some(icon_path) = config.icon_path.as_ref() {
+                    sync_root_info.set_icon(format!("{},0", icon_path));
+                }
+                sync_root_info.set_version("1.0.0");
+                sync_root_info
+                    .set_recycle_bin_uri(
+                        recycle_bin_url(&config)
+                            .unwrap_or_else(|_| "https://cloudreve.org".to_string()),
+                    )
+                    .context("failed to set recycle bin uri")?;
+                sync_root_info
+                    .set_path(Path::new(&config.sync_path))
+                    .context("failed to set sync root path")?;
+                sync_root_info.add_custom_state(t!("shared").as_ref(), 1)?;
+                sync_root_info.add_custom_state(t!("accessible").as_ref(), 2)?;
+                sync_root_id
+                    .register(sync_root_info)
+                    .context("failed to register sync root")?;
+            }
+
+            // Add to search indexer for state management
+            if let Err(e) = sync_root_id.index() {
+                tracing::warn!(target: "drive::mounts", id = %self.id, error = %e, "Failed to add sync root to search indexer");
+            }
+
+            tracing::info!(target: "drive::mounts",sync_path = %config.sync_path.display(), id = %self.id, "Connecting to sync root");
+            let connection = Session::new()
+                .connect(
+                    &config.sync_path,
+                    CallbackHandler::new(
+                        self.command_tx.clone(),
+                        self.id.clone(),
+                        self.inventory.clone(),
+                    ),
+                )
+                .context("failed to connect to sync root")?;
+
+            self.connection = Some(connection);
+            self.start_fs_watcher().await?;
+            Ok(())
         }
     }
 
@@ -546,7 +566,11 @@ impl Mount {
                         let _ = response.send(result);
                     });
                 }
-                MountCommand::Sync { mode, local_paths, user_initiated } => {
+                MountCommand::Sync {
+                    mode,
+                    local_paths,
+                    user_initiated,
+                } => {
                     let s_clone = s.clone();
                     let mount_id_clone = mount_id.clone();
                     spawn(async move {
@@ -654,7 +678,9 @@ impl Mount {
     pub async fn delete(&self) -> Result<()> {
         self.shutdown().await;
         if let Some(ref connection) = self.connection {
-            connection.disconnect().context("faield to disconnect sync root")?;
+            connection
+                .disconnect()
+                .context("faield to disconnect sync root")?;
         }
         self.task_queue.shutdown().await;
         if let Some(sync_root_id) = self.config.read().await.sync_root_id.as_ref() {

@@ -16,15 +16,17 @@ Status: implemented.
 
 ## Phase 2: KDE Placeholder Support
 
-Status: planned.
+Status: implemented.
 
-- Detect KDE/Plasma at runtime using environment signals such as `XDG_CURRENT_DESKTOP`, `KDE_FULL_SESSION`, and `DESKTOP_SESSION`.
-- Add a Linux platform capability model:
+- Detect KDE/Plasma at runtime using environment signals such as `XDG_CURRENT_DESKTOP`, `KDE_FULL_SESSION`, and `DESKTOP_SESSION`. Implemented.
+- Probe KDE placeholder backend readiness separately from KDE session detection. Implemented.
+- Add a Linux platform capability model. Implemented:
   - `FullSyncOnly` for GNOME, XFCE, Cinnamon, generic Wayland/X11, and unknown desktops.
-  - `KdePlaceholders` for supported KDE environments.
-- Implement KDE placeholder integration as a separate backend from Windows CFAPI.
+  - `KdePlaceholders` only when the KDE backend is detected and available.
+- Expose platform capabilities to the Tauri UI. Implemented.
+- Implement KDE placeholder integration as a separate backend from Windows CFAPI. Implemented as a KDE/Dolphin service-menu backend with CLI dispatch into the existing sync engine. This is intentionally separate from Windows CFAPI; KDE does not provide an equivalent system Cloud Files API.
 - Keep non-KDE desktops on the Phase 1 full sync path.
-- Add clear logging when KDE placeholder support is unavailable or disabled.
+- Add clear logging when KDE placeholder support is unavailable or disabled. Implemented.
 
 ## Phase 3: UI And Packaging
 

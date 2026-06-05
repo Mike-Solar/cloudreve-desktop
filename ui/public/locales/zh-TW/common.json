@@ -64,6 +64,26 @@
     "language": "語言",
     "languageDescription": "選擇應用程式的顯示語言",
     "languageAuto": "跟隨系統",
+    "syncCapabilitySettings": "同步能力",
+    "syncModeTitle": "同步模式",
+    "placeholderSupport": "佔位符支援",
+    "placeholderAvailable": "可用",
+    "placeholderUnavailable": "不可用",
+    "syncMode": {
+      "windows_cloud_files": "Windows 佔位符",
+      "kde_placeholders": "KDE 佔位符",
+      "full_sync_only": "全量同步"
+    },
+    "desktopEnvironment": {
+      "windows": "Windows",
+      "macos": "macOS",
+      "kde": "KDE",
+      "gnome": "GNOME",
+      "xfce": "XFCE",
+      "cinnamon": "Cinnamon",
+      "mate": "MATE",
+      "unknown": "未知"
+    },
     "notificationSettings": "通知",
     "notifyCredentialExpired": "憑證過期通知",
     "notifyCredentialExpiredDescription": "當雲端硬碟憑證過期時顯示通知",

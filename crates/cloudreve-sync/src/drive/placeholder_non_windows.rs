@@ -2,7 +2,7 @@ use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Context, Result};
 use chrono::DateTime;
-use cloudreve_api::models::explorer::{file_type, FileResponse};
+use cloudreve_api::models::explorer::{FileResponse, file_type};
 use uuid::Uuid;
 
 use crate::{
@@ -110,7 +110,11 @@ impl CrPlaceholder {
                 .as_ref()
                 .unwrap_or(&String::new())
                 .clone(),
-            permissions: file_info.permission.as_ref().unwrap_or(&String::new()).clone(),
+            permissions: file_info
+                .permission
+                .as_ref()
+                .unwrap_or(&String::new())
+                .clone(),
             shared: file_info.shared.unwrap_or(false),
             metadata: file_info.metadata.clone().unwrap_or_default(),
             props: None,
@@ -121,5 +125,71 @@ impl CrPlaceholder {
 
     pub fn update_sync_error_state(&mut self, _sync_error: bool) -> Result<()> {
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cloudreve_api::models::explorer::file_type;
+    use tempfile::tempdir;
+
+    #[test]
+    fn remote_file_commit_updates_inventory_without_creating_placeholder_file() {
+        let temp = tempdir().unwrap();
+        let sync_root = temp.path().join("sync");
+        let local_path = sync_root.join("remote.txt");
+        let inventory = Arc::new(InventoryDb::with_path(temp.path().join("meta.db")).unwrap());
+        let drive_id = Uuid::new_v4();
+        let remote = FileResponse {
+            file_type: file_type::FILE,
+            id: "file-id".to_string(),
+            name: "remote.txt".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            size: 42,
+            path: "cloudreve://remote.txt".to_string(),
+            primary_entity: Some("etag".to_string()),
+            ..Default::default()
+        };
+
+        CrPlaceholder::new(local_path.clone(), sync_root, drive_id)
+            .with_remote_file(&remote)
+            .commit(inventory.clone())
+            .unwrap();
+
+        assert!(!local_path.exists());
+        let stored = inventory
+            .query_by_path(local_path.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.etag, "etag");
+        assert!(!stored.is_folder);
+    }
+
+    #[test]
+    fn remote_folder_commit_creates_local_directory() {
+        let temp = tempdir().unwrap();
+        let sync_root = temp.path().join("sync");
+        let local_path = sync_root.join("folder");
+        let inventory = Arc::new(InventoryDb::with_path(temp.path().join("meta.db")).unwrap());
+        let drive_id = Uuid::new_v4();
+        let remote = FileResponse {
+            file_type: file_type::FOLDER,
+            id: "folder-id".to_string(),
+            name: "folder".to_string(),
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+            updated_at: "2026-01-01T00:00:00Z".to_string(),
+            path: "cloudreve://folder".to_string(),
+            primary_entity: Some("folder-etag".to_string()),
+            ..Default::default()
+        };
+
+        CrPlaceholder::new(local_path.clone(), sync_root, drive_id)
+            .with_remote_file(&remote)
+            .commit(inventory)
+            .unwrap();
+
+        assert!(local_path.is_dir());
     }
 }

@@ -27,8 +27,11 @@ Status: implemented.
 
 ## Phase 3: UI And Packaging
 
-Status: planned.
+Status: implemented.
 
-- Add Linux autostart support through freedesktop `.desktop` files.
-- Add Linux packaging metadata.
-- Add integration tests for Linux full sync behavior.
+- Add Linux autostart support through freedesktop `.desktop` files. Implemented.
+- Add Linux packaging metadata. Implemented with a freedesktop `.desktop` entry template.
+- Add tests for Linux full sync behavior. Implemented:
+  - Non-Windows remote file metadata commits update inventory without creating placeholder files.
+  - Non-Windows remote folder metadata commits create local directories.
+  - Linux autostart entries quote and escape executable paths correctly.

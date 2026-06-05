@@ -403,7 +403,11 @@ pub async fn show_reauthorize_window(
 
 /// Show or create the add-drive window
 pub fn show_add_drive_window_impl(app: &AppHandle) {
-    show_drive_window_internal(app, "Add Drive", &get_url_with_lang("index.html/#/add-drive"));
+    show_drive_window_internal(
+        app,
+        "Add Drive",
+        &get_url_with_lang("index.html/#/add-drive"),
+    );
 }
 
 /// Show or create the reauthorize window for a specific drive
@@ -522,76 +526,198 @@ pub fn show_settings_window_impl(app: &AppHandle) {
 /// The TaskId defined in AppxManifest.xml for the startup task
 #[cfg(windows)]
 const STARTUP_TASK_ID: &str = "cloudreve";
+#[cfg(target_os = "linux")]
+const AUTOSTART_DESKTOP_FILE: &str = "cloudreve-desktop.desktop";
+
+#[cfg(target_os = "linux")]
+fn linux_autostart_path() -> CommandResult<std::path::PathBuf> {
+    let config_home = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME")
+                .map(std::path::PathBuf::from)
+                .map(|home| home.join(".config"))
+        })
+        .ok_or_else(|| "Unable to determine XDG config directory".to_string())?;
+
+    Ok(config_home.join("autostart").join(AUTOSTART_DESKTOP_FILE))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_desktop_exec_quote(value: &str) -> String {
+    let escaped = value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('$', "\\$")
+        .replace('`', "\\`")
+        .replace('\n', "")
+        .replace('\r', "");
+    format!("\"{}\"", escaped)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_autostart_entry() -> CommandResult<String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+    let exec = linux_desktop_exec_quote(&exe.display().to_string());
+
+    Ok(format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Version=1.0\n\
+         Name=Cloudreve\n\
+         Comment=Cloudreve Desktop Sync Client\n\
+         Exec={}\n\
+         Terminal=false\n\
+         X-GNOME-Autostart-enabled=true\n\
+         Hidden=false\n",
+        exec
+    ))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_get_auto_start_enabled() -> CommandResult<bool> {
+    let path = linux_autostart_path()?;
+    let content = match std::fs::read_to_string(path) {
+        Ok(content) => content,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(err) => return Err(format!("Failed to read autostart entry: {}", err)),
+    };
+
+    let disabled = content.lines().any(|line| {
+        matches!(
+            line.trim(),
+            "Hidden=true" | "X-GNOME-Autostart-enabled=false"
+        )
+    });
+    Ok(!disabled)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_set_auto_start(enabled: bool) -> CommandResult<bool> {
+    let path = linux_autostart_path()?;
+
+    if enabled {
+        let parent = path
+            .parent()
+            .ok_or_else(|| "Invalid autostart entry path".to_string())?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create autostart directory: {}", e))?;
+        std::fs::write(&path, linux_autostart_entry()?)
+            .map_err(|e| format!("Failed to write autostart entry: {}", e))?;
+        Ok(true)
+    } else {
+        match std::fs::remove_file(&path) {
+            Ok(_) => Ok(false),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(err) => Err(format!("Failed to remove autostart entry: {}", err)),
+        }
+    }
+}
 
 /// Get whether auto-start is enabled using Windows StartupTask API
 #[tauri::command]
 pub async fn get_auto_start_enabled() -> CommandResult<bool> {
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
-        return Ok(false);
+        return tokio::task::spawn_blocking(linux_get_auto_start_enabled)
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?;
+    }
+
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        Ok(false)
     }
 
     #[cfg(windows)]
     {
-    tokio::task::spawn_blocking(|| {
-        let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
-        let task = StartupTask::GetAsync(&task_id)
-            .map_err(|e| format!("Failed to get startup task: {}", e))?
-            .get()
-            .map_err(|e| format!("Failed to get startup task: {}", e))?;
+        tokio::task::spawn_blocking(|| {
+            let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
+            let task = StartupTask::GetAsync(&task_id)
+                .map_err(|e| format!("Failed to get startup task: {}", e))?
+                .get()
+                .map_err(|e| format!("Failed to get startup task: {}", e))?;
 
-        let state = task
-            .State()
-            .map_err(|e| format!("Failed to get task state: {}", e))?;
+            let state = task
+                .State()
+                .map_err(|e| format!("Failed to get task state: {}", e))?;
 
-        Ok(matches!(
-            state,
-            StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
-        ))
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+            Ok(matches!(
+                state,
+                StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
+            ))
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
     }
 }
 
 /// Set auto-start configuration using Windows StartupTask API
 #[tauri::command]
 pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
     {
-        let _ = enabled;
-        return Err("Auto-start configuration is not supported on this platform yet".to_string());
+        return tokio::task::spawn_blocking(move || linux_set_auto_start(enabled))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?;
+    }
+
+    #[cfg(not(any(windows, target_os = "linux")))]
+    {
+        Err("Auto-start configuration is not supported on this platform yet".to_string())
     }
 
     #[cfg(windows)]
     {
-    tokio::task::spawn_blocking(move || {
-        let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
-        let task = StartupTask::GetAsync(&task_id)
-            .map_err(|e| format!("Failed to get startup task: {}", e))?
-            .get()
-            .map_err(|e| format!("Failed to get startup task: {}", e))?;
-
-        if enabled {
-            // Request enable - may prompt user for consent
-            let new_state = task
-                .RequestEnableAsync()
-                .map_err(|e| format!("Failed to request enable: {}", e))?
+        tokio::task::spawn_blocking(move || {
+            let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
+            let task = StartupTask::GetAsync(&task_id)
+                .map_err(|e| format!("Failed to get startup task: {}", e))?
                 .get()
-                .map_err(|e| format!("Failed to enable startup task: {}", e))?;
+                .map_err(|e| format!("Failed to get startup task: {}", e))?;
 
-            Ok(matches!(
-                new_state,
-                StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
-            ))
-        } else {
-            task.Disable()
-                .map_err(|e| format!("Failed to disable startup task: {}", e))?;
-            Ok(false)
-        }
-    })
-    .await
-    .map_err(|e| format!("Task join error: {}", e))?
+            if enabled {
+                // Request enable - may prompt user for consent
+                let new_state = task
+                    .RequestEnableAsync()
+                    .map_err(|e| format!("Failed to request enable: {}", e))?
+                    .get()
+                    .map_err(|e| format!("Failed to enable startup task: {}", e))?;
+
+                Ok(matches!(
+                    new_state,
+                    StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
+                ))
+            } else {
+                task.Disable()
+                    .map_err(|e| format!("Failed to disable startup task: {}", e))?;
+                Ok(false)
+            }
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_autostart_tests {
+    use super::linux_desktop_exec_quote;
+
+    #[test]
+    fn quotes_exec_paths_for_desktop_entries() {
+        assert_eq!(
+            linux_desktop_exec_quote("/opt/Cloudreve Desktop/cloudreve"),
+            "\"/opt/Cloudreve Desktop/cloudreve\""
+        );
+    }
+
+    #[test]
+    fn escapes_shell_sensitive_exec_characters() {
+        assert_eq!(
+            linux_desktop_exec_quote("/tmp/cloudreve\"$`\\bin"),
+            "\"/tmp/cloudreve\\\"\\$\\`\\\\bin\""
+        );
     }
 }
 
@@ -683,13 +809,12 @@ pub async fn set_language(app: AppHandle, language: Option<String>) -> CommandRe
         .map_err(|e| e.to_string())?;
 
     // Update rust_i18n locale
-    let locale = language.unwrap_or_else(|| {
-        sys_locale::get_locale().unwrap_or_else(|| String::from("en-US"))
-    });
+    let locale = language
+        .unwrap_or_else(|| sys_locale::get_locale().unwrap_or_else(|| String::from("en-US")));
     rust_i18n::set_locale(&locale);
 
     // Close main window to force reload with new language
-     // Check if window already exists
+    // Check if window already exists
     if let Some(window) = app.get_webview_window("main_popup") {
         let _ = window.close();
         let _ = window.destroy();

@@ -1,0 +1,49 @@
+# Maintainer: Cloudreve Desktop maintainers
+pkgname=cloudreve-desktop
+pkgver=0.2.0
+pkgrel=1
+pkgdesc='Cloudreve Desktop Sync Client'
+arch=('x86_64')
+url='https://github.com/cloudreve/desktop'
+license=('MIT')
+depends=(
+  'gtk3'
+  'hicolor-icon-theme'
+  'libayatana-appindicator'
+  'openssl'
+  'webkit2gtk-4.1'
+)
+makedepends=(
+  'rust'
+  'file'
+  'nodejs'
+  'pkgconf'
+  'yarn'
+)
+source=("${pkgname}-${pkgver}.tar.gz::https://github.com/cloudreve/desktop/archive/refs/tags/v${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+prepare() {
+  cd "desktop-${pkgver}"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --target "$CARCH-unknown-linux-gnu"
+}
+
+build() {
+  cd "desktop-${pkgver}"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+
+  yarn --cwd ui install --frozen-lockfile
+  yarn --cwd ui run build
+  cargo build --release -p cloudreve-desktop
+}
+
+package() {
+  cd "desktop-${pkgver}"
+
+  install -Dm755 target/release/cloudreve-desktop "$pkgdir/usr/bin/cloudreve-desktop"
+  install -Dm644 package/linux/cloudreve-desktop.desktop "$pkgdir/usr/share/applications/cloudreve-desktop.desktop"
+  install -Dm644 src-tauri/icons/128x128.png "$pkgdir/usr/share/icons/hicolor/128x128/apps/cloudreve.png"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

@@ -10,6 +10,22 @@ use crate::{
     inventory::{FileMetadata, InventoryDb, MetadataEntry},
 };
 
+/// Non-Windows compatibility implementation for the Windows `CrPlaceholder` API.
+///
+/// Despite the type name, this implementation does **not** create dehydrated,
+/// on-demand, or filesystem-provider placeholders. Linux and other non-Windows
+/// platforms use full sync only, so this type is a small adapter that keeps the
+/// shared sync code compiling while mapping placeholder operations to ordinary
+/// local filesystem and inventory operations:
+///
+/// - remote folders create real local directories;
+/// - remote files only update inventory metadata here and are downloaded by the
+///   normal download queue;
+/// - delete operations remove real local files or directories if they exist.
+///
+/// The public method names intentionally mirror the Windows implementation so
+/// callers can use one cross-platform code path. Review this file as the
+/// non-Windows full-sync metadata helper, not as a placeholder backend.
 pub struct CrPlaceholder {
     pub local_file_info: LocalFileInfo,
     local_path: PathBuf,
@@ -19,6 +35,15 @@ pub struct CrPlaceholder {
 }
 
 impl CrPlaceholder {
+    /// Creates a non-Windows full-sync adapter for a local path.
+    ///
+    /// The `sync_root` parameter is accepted for API parity with the Windows
+    /// placeholder implementation, but it is not needed here because no cloud
+    /// filter root or provider registration exists on non-Windows platforms.
+    ///
+    /// `local_file_info` is populated from the real local path when possible.
+    /// If the path does not exist yet, the adapter records a missing file state;
+    /// this is expected for remote files that will be downloaded later.
     pub fn new(local_path: impl Into<PathBuf>, _sync_root: PathBuf, drive_id: Uuid) -> Self {
         let local_path = local_path.into();
         Self {
@@ -31,20 +56,39 @@ impl CrPlaceholder {
         }
     }
 
+    /// No-op compatibility hook for the Windows range invalidation option.
+    ///
+    /// Windows placeholders can invalidate byte ranges through CFAPI. Non-Windows
+    /// full sync has no dehydrated file ranges, so this method deliberately
+    /// returns `self` unchanged.
     pub fn with_invalidate_all_range(self, _enable: bool) -> Self {
         self
     }
 
+    /// Records the requested "no children" marker for API parity.
+    ///
+    /// The flag is kept so shared builder chains behave consistently, but no
+    /// non-Windows filesystem metadata is written from this value.
     pub fn with_mark_no_children(mut self, enable: bool) -> Self {
         self.mark_no_children = enable;
         self
     }
 
+    /// Attaches inventory metadata that will be committed later.
+    ///
+    /// On non-Windows platforms this metadata describes a fully synced local
+    /// entry. For files, committing the metadata does not create any file bytes;
+    /// the download task is responsible for creating the real file.
     pub fn with_file_meta(mut self, file_meta: FileMetadata) -> Self {
         self.file_meta = Some(file_meta);
         self
     }
 
+    /// Deletes the real local file or directory and removes its inventory row.
+    ///
+    /// The name mirrors the Windows placeholder API, but the operation here is
+    /// not limited to placeholder metadata. If the path exists, this removes the
+    /// actual synced file or directory from disk before deleting inventory data.
     pub fn delete_placeholder(&self, inventory: Arc<InventoryDb>) -> Result<()> {
         if self.local_file_info.exists {
             if self.local_path.is_dir() {
@@ -65,6 +109,13 @@ impl CrPlaceholder {
         Ok(())
     }
 
+    /// Commits the pending metadata using non-Windows full-sync semantics.
+    ///
+    /// For folders, this creates a real local directory immediately and then
+    /// stores metadata in the inventory. For files, this only ensures the parent
+    /// directory exists and stores metadata; it intentionally does **not** create
+    /// a placeholder file. The normal download queue must later write the full
+    /// file contents to disk.
     pub fn commit(&mut self, inventory: Arc<InventoryDb>) -> Result<()> {
         let file_meta = self
             .file_meta
@@ -86,6 +137,11 @@ impl CrPlaceholder {
         Ok(())
     }
 
+    /// Converts a remote API file response into local inventory metadata.
+    ///
+    /// This method does not create any local file or directory by itself. It only
+    /// prepares the metadata that `commit` will apply using non-Windows full-sync
+    /// behavior.
     pub fn with_remote_file(mut self, file_info: &FileResponse) -> Self {
         let created_at = DateTime::parse_from_rfc3339(&file_info.created_at)
             .ok()
@@ -123,6 +179,11 @@ impl CrPlaceholder {
         self
     }
 
+    /// No-op compatibility hook for Windows placeholder sync error state.
+    ///
+    /// Windows can surface sync error state through shell/provider metadata.
+    /// Non-Windows full sync currently has no equivalent per-file shell state,
+    /// so this method succeeds without changing the filesystem or inventory.
     pub fn update_sync_error_state(&mut self, _sync_error: bool) -> Result<()> {
         Ok(())
     }

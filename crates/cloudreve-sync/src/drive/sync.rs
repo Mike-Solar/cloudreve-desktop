@@ -502,14 +502,16 @@ impl Mount {
         let inventory_files = self.fetch_inventory_entries(paths).await?;
         tracing::trace!("{:?}", inventory_files);
 
-        let plan = self.build_sync_plan(
-            parent,
-            mode,
-            paths,
-            &remote_files,
-            &local_files,
-            &inventory_files,
-        ).await;
+        let plan = self
+            .build_sync_plan(
+                parent,
+                mode,
+                paths,
+                &remote_files,
+                &local_files,
+                &inventory_files,
+            )
+            .await;
 
         tracing::debug!(
             target: "drive::sync",
@@ -588,6 +590,9 @@ impl Mount {
                 } else {
                     #[cfg(not(windows))]
                     if remote.file_type != file_type::FOLDER {
+                        // Non-Windows `CrPlaceholder` only records inventory metadata here.
+                        // There is no CFAPI-style dehydrated placeholder, so queue a normal
+                        // download to create the real full-sync file on disk.
                         if let Err(err) = self
                             .task_queue
                             .enqueue(TaskPayload::download(path.clone()))
@@ -621,6 +626,9 @@ impl Mount {
                 } else {
                     #[cfg(not(windows))]
                     if remote.file_type != file_type::FOLDER {
+                        // Non-Windows `CrPlaceholder` only refreshes inventory metadata here.
+                        // Since Linux has no on-demand placeholder backend, the real file
+                        // contents must be downloaded immediately through the task queue.
                         if let Err(err) = self
                             .task_queue
                             .enqueue(TaskPayload::download(path.clone()))
@@ -655,7 +663,7 @@ impl Mount {
                     aggregate_error.push(path.clone(), anyhow::Error::from(err));
                 }
             }
-            SyncAction::QueueDownload { path, remote:_ } => {
+            SyncAction::QueueDownload { path, remote: _ } => {
                 tracing::info!(
                     target: "drive::sync",
                     id = %self.id,

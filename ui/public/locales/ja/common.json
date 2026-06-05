@@ -64,26 +64,6 @@
     "language": "言語",
     "languageDescription": "アプリケーションの表示言語を選択",
     "languageAuto": "システムのデフォルト",
-    "syncCapabilitySettings": "Sync capability",
-    "syncModeTitle": "Sync mode",
-    "placeholderSupport": "Placeholder support",
-    "placeholderAvailable": "Available",
-    "placeholderUnavailable": "Unavailable",
-    "syncMode": {
-      "windows_cloud_files": "Windows placeholders",
-      "kde_placeholders": "KDE placeholders",
-      "full_sync_only": "Full sync"
-    },
-    "desktopEnvironment": {
-      "windows": "Windows",
-      "macos": "macOS",
-      "kde": "KDE",
-      "gnome": "GNOME",
-      "xfce": "XFCE",
-      "cinnamon": "Cinnamon",
-      "mate": "MATE",
-      "unknown": "Unknown"
-    },
     "notificationSettings": "通知",
     "notifyCredentialExpired": "認証期限切れ通知",
     "notifyCredentialExpiredDescription": "ドライブの認証が期限切れになったときに通知を表示",

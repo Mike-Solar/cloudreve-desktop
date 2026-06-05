@@ -7,11 +7,7 @@ pub mod config;
 pub mod drive;
 pub mod events;
 pub mod inventory;
-pub mod kde;
-#[cfg(target_os = "linux")]
-pub mod linux;
 pub mod logging;
-pub mod platform;
 #[cfg(windows)]
 pub mod shellext;
 #[cfg(not(windows))]
@@ -23,13 +19,10 @@ pub mod utils;
 
 // Re-export commonly used types
 pub use config::{AppConfig, ConfigManager};
-pub use drive::manager::{
-    DriveInfo, DriveInfoStatus, DriveManager, StatusSummary, TaskWithProgress,
-};
+pub use drive::manager::{DriveInfo, DriveInfoStatus, DriveManager, StatusSummary, TaskWithProgress};
 pub use drive::mounts::{Credentials, DriveConfig};
 pub use events::{Event, EventBroadcaster};
 pub use logging::{LogConfig, LogGuard};
-pub use platform::{DesktopEnvironment, PlatformCapabilities, SyncModeCapability};
 
 /// User agent string for HTTP requests
 pub const USER_AGENT: &str = concat!("cloudreve-desktop/", env!("CARGO_PKG_VERSION"));

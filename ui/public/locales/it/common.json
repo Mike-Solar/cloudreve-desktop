@@ -64,26 +64,6 @@
     "language": "Lingua",
     "languageDescription": "Seleziona la lingua di visualizzazione dell'applicazione",
     "languageAuto": "Predefinito di sistema",
-    "syncCapabilitySettings": "Sync capability",
-    "syncModeTitle": "Sync mode",
-    "placeholderSupport": "Placeholder support",
-    "placeholderAvailable": "Available",
-    "placeholderUnavailable": "Unavailable",
-    "syncMode": {
-      "windows_cloud_files": "Windows placeholders",
-      "kde_placeholders": "KDE placeholders",
-      "full_sync_only": "Full sync"
-    },
-    "desktopEnvironment": {
-      "windows": "Windows",
-      "macos": "macOS",
-      "kde": "KDE",
-      "gnome": "GNOME",
-      "xfce": "XFCE",
-      "cinnamon": "Cinnamon",
-      "mate": "MATE",
-      "unknown": "Unknown"
-    },
     "notificationSettings": "Notifiche",
     "notifyCredentialExpired": "Notifica scadenza credenziali",
     "notifyCredentialExpiredDescription": "Mostra notifica quando le credenziali dell'unità scadono",

@@ -4,10 +4,9 @@ mod types;
 
 pub use types::*;
 
-use crate::EventBroadcaster;
 use crate::drive::commands::ManagerCommand;
 use crate::drive::mounts::{Credentials, DriveConfig, Mount};
-use crate::drive::sync::SyncMode;
+use crate::EventBroadcaster;
 use crate::inventory::InventoryDb;
 use crate::tasks::TaskProgress;
 use anyhow::{Context, Result};
@@ -54,18 +53,6 @@ impl DriveManager {
 
     pub fn get_inventory(&self) -> Arc<InventoryDb> {
         self.inventory.clone()
-    }
-
-    pub fn dispatch_sync_now(&self, paths: Vec<PathBuf>, mode: SyncMode) -> Result<()> {
-        self.command_tx
-            .send(ManagerCommand::SyncNow { paths, mode })
-            .context("Failed to dispatch sync command")
-    }
-
-    pub fn dispatch_view_online(&self, path: PathBuf) -> Result<()> {
-        self.command_tx
-            .send(ManagerCommand::ViewOnline { path })
-            .context("Failed to dispatch view online command")
     }
 
     /// Get the .cloudreve config directory path
@@ -496,10 +483,7 @@ impl DriveManager {
             .into_iter()
             .map(|task| {
                 let progress = progress_map.remove(&task.id);
-                TaskWithProgress {
-                    task,
-                    live_progress: progress,
-                }
+                TaskWithProgress { task, live_progress: progress }
             })
             .collect();
 
@@ -611,7 +595,7 @@ impl DriveManager {
             let status = if drive_state.is_credential_expired() {
                 DriveInfoStatus::CredentialExpired
             } else {
-                if !drive_state.is_event_push_subscribed() {
+                if !drive_state.is_event_push_subscribed(){
                     DriveInfoStatus::EventPushLost
                 } else {
                     DriveInfoStatus::Active
@@ -664,11 +648,7 @@ impl DriveManager {
 impl DriveManager {
     /// Get capacity summary from a mount's drive props.
     /// Only returns capacity if the remote_path filesystem is "my".
-    fn get_capacity_summary(
-        mount: &Mount,
-        drive_id: &str,
-        remote_path: &str,
-    ) -> Option<CapacitySummary> {
+    fn get_capacity_summary(mount: &Mount, drive_id: &str, remote_path: &str) -> Option<CapacitySummary> {
         // Only show capacity for "my" filesystem
         use cloudreve_api::models::uri::CrUri;
         let is_my_fs = CrUri::new(remote_path)

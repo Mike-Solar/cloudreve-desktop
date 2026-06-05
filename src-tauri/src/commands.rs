@@ -2,8 +2,7 @@ use crate::AppStateHandle;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{Duration, Utc};
 use cloudreve_sync::{
-    config::LogLevel, ConfigManager, Credentials, DriveConfig, DriveInfo, PlatformCapabilities,
-    StatusSummary,
+    config::LogLevel, ConfigManager, Credentials, DriveConfig, DriveInfo, StatusSummary,
 };
 #[cfg(target_os = "macos")]
 use tauri::TitleBarStyle;
@@ -404,11 +403,7 @@ pub async fn show_reauthorize_window(
 
 /// Show or create the add-drive window
 pub fn show_add_drive_window_impl(app: &AppHandle) {
-    show_drive_window_internal(
-        app,
-        "Add Drive",
-        &get_url_with_lang("index.html/#/add-drive"),
-    );
+    show_drive_window_internal(app, "Add Drive", &get_url_with_lang("index.html/#/add-drive"));
 }
 
 /// Show or create the reauthorize window for a specific drive
@@ -538,24 +533,24 @@ pub async fn get_auto_start_enabled() -> CommandResult<bool> {
 
     #[cfg(windows)]
     {
-        tokio::task::spawn_blocking(|| {
-            let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
-            let task = StartupTask::GetAsync(&task_id)
-                .map_err(|e| format!("Failed to get startup task: {}", e))?
-                .get()
-                .map_err(|e| format!("Failed to get startup task: {}", e))?;
+    tokio::task::spawn_blocking(|| {
+        let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
+        let task = StartupTask::GetAsync(&task_id)
+            .map_err(|e| format!("Failed to get startup task: {}", e))?
+            .get()
+            .map_err(|e| format!("Failed to get startup task: {}", e))?;
 
-            let state = task
-                .State()
-                .map_err(|e| format!("Failed to get task state: {}", e))?;
+        let state = task
+            .State()
+            .map_err(|e| format!("Failed to get task state: {}", e))?;
 
-            Ok(matches!(
-                state,
-                StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
-            ))
-        })
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+        Ok(matches!(
+            state,
+            StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
+        ))
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
     }
 }
 
@@ -570,33 +565,33 @@ pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
 
     #[cfg(windows)]
     {
-        tokio::task::spawn_blocking(move || {
-            let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
-            let task = StartupTask::GetAsync(&task_id)
-                .map_err(|e| format!("Failed to get startup task: {}", e))?
+    tokio::task::spawn_blocking(move || {
+        let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
+        let task = StartupTask::GetAsync(&task_id)
+            .map_err(|e| format!("Failed to get startup task: {}", e))?
+            .get()
+            .map_err(|e| format!("Failed to get startup task: {}", e))?;
+
+        if enabled {
+            // Request enable - may prompt user for consent
+            let new_state = task
+                .RequestEnableAsync()
+                .map_err(|e| format!("Failed to request enable: {}", e))?
                 .get()
-                .map_err(|e| format!("Failed to get startup task: {}", e))?;
+                .map_err(|e| format!("Failed to enable startup task: {}", e))?;
 
-            if enabled {
-                // Request enable - may prompt user for consent
-                let new_state = task
-                    .RequestEnableAsync()
-                    .map_err(|e| format!("Failed to request enable: {}", e))?
-                    .get()
-                    .map_err(|e| format!("Failed to enable startup task: {}", e))?;
-
-                Ok(matches!(
-                    new_state,
-                    StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
-                ))
-            } else {
-                task.Disable()
-                    .map_err(|e| format!("Failed to disable startup task: {}", e))?;
-                Ok(false)
-            }
-        })
-        .await
-        .map_err(|e| format!("Task join error: {}", e))?
+            Ok(matches!(
+                new_state,
+                StartupTaskState::Enabled | StartupTaskState::EnabledByPolicy
+            ))
+        } else {
+            task.Disable()
+                .map_err(|e| format!("Failed to disable startup task: {}", e))?;
+            Ok(false)
+        }
+    })
+    .await
+    .map_err(|e| format!("Task join error: {}", e))?
     }
 }
 
@@ -638,12 +633,6 @@ pub async fn get_general_settings() -> CommandResult<GeneralSettings> {
         log_dir: ConfigManager::get_log_dir().display().to_string(),
         language: config.language,
     })
-}
-
-/// Get platform sync capability for the current OS and desktop environment.
-#[tauri::command]
-pub async fn get_platform_capabilities() -> CommandResult<PlatformCapabilities> {
-    Ok(PlatformCapabilities::current())
 }
 
 #[derive(serde::Serialize)]
@@ -694,12 +683,13 @@ pub async fn set_language(app: AppHandle, language: Option<String>) -> CommandRe
         .map_err(|e| e.to_string())?;
 
     // Update rust_i18n locale
-    let locale = language
-        .unwrap_or_else(|| sys_locale::get_locale().unwrap_or_else(|| String::from("en-US")));
+    let locale = language.unwrap_or_else(|| {
+        sys_locale::get_locale().unwrap_or_else(|| String::from("en-US"))
+    });
     rust_i18n::set_locale(&locale);
 
     // Close main window to force reload with new language
-    // Check if window already exists
+     // Check if window already exists
     if let Some(window) = app.get_webview_window("main_popup") {
         let _ = window.close();
         let _ = window.destroy();

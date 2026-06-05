@@ -64,26 +64,6 @@
     "language": "언어",
     "languageDescription": "애플리케이션 표시 언어 선택",
     "languageAuto": "시스템 기본값",
-    "syncCapabilitySettings": "Sync capability",
-    "syncModeTitle": "Sync mode",
-    "placeholderSupport": "Placeholder support",
-    "placeholderAvailable": "Available",
-    "placeholderUnavailable": "Unavailable",
-    "syncMode": {
-      "windows_cloud_files": "Windows placeholders",
-      "kde_placeholders": "KDE placeholders",
-      "full_sync_only": "Full sync"
-    },
-    "desktopEnvironment": {
-      "windows": "Windows",
-      "macos": "macOS",
-      "kde": "KDE",
-      "gnome": "GNOME",
-      "xfce": "XFCE",
-      "cinnamon": "Cinnamon",
-      "mate": "MATE",
-      "unknown": "Unknown"
-    },
     "notificationSettings": "알림",
     "notifyCredentialExpired": "자격 증명 만료 알림",
     "notifyCredentialExpiredDescription": "드라이브 자격 증명이 만료되면 알림 표시",

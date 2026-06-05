@@ -1,14 +1,17 @@
 use crate::AppStateHandle;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{Duration, Utc};
+use cloudreve_sync::drive::commands::ConflictAction;
 use cloudreve_sync::{
     config::LogLevel, ConfigManager, Credentials, DriveConfig, DriveInfo, StatusSummary,
 };
+#[cfg(windows)]
+use tauri::utils::{config::WindowEffectsConfig, WindowEffect};
 #[cfg(target_os = "macos")]
 use tauri::TitleBarStyle;
 use tauri::{
-    utils::{config::WindowEffectsConfig, WindowEffect},
-    webview::WebviewWindowBuilder,
+    utils::config::Color,
+    webview::{WebviewWindow, WebviewWindowBuilder},
     AppHandle, Manager, State, WebviewUrl,
 };
 use tauri_plugin_frame::WebviewWindowExt;
@@ -270,6 +273,35 @@ pub async fn get_status_summary(
         .map_err(|e| e.to_string())
 }
 
+/// Resolve a pending local-vs-remote conflict.
+#[tauri::command]
+pub async fn resolve_conflict(
+    state: State<'_, AppStateHandle>,
+    drive_id: String,
+    file_id: i64,
+    path: String,
+    action: String,
+) -> CommandResult<()> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    // Keep the frontend contract string-based so TS does not need to mirror the
+    // Rust enum layout. The accepted values are the same action IDs used by the
+    // Windows shell/toast resolver.
+    let action = ConflictAction::from_str(&action)
+        .ok_or_else(|| format!("Invalid conflict action: {action}"))?;
+    let drive = app_state
+        .drive_manager
+        .get_drive(&drive_id)
+        .await
+        .ok_or_else(|| format!("Drive not found: {drive_id}"))?;
+
+    drive
+        .resolve_conflict(action, file_id, path)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 /// Get all drives with their status information for the settings UI
 #[tauri::command]
 pub async fn get_drives_info(state: State<'_, AppStateHandle>) -> CommandResult<Vec<DriveInfo>> {
@@ -294,24 +326,55 @@ pub struct FileIconResponse {
     pub height: u32,
 }
 
+fn file_icon_to_response(icon: file_icon_provider::Icon) -> FileIconResponse {
+    FileIconResponse {
+        data: BASE64.encode(&icon.pixels),
+        width: icon.width,
+        height: icon.height,
+    }
+}
+
 /// Get file icon for a given path
 /// Returns base64 encoded RGBA pixel data with dimensions
 #[tauri::command]
-pub async fn get_file_icon(path: String, size: Option<u16>) -> CommandResult<FileIconResponse> {
+pub async fn get_file_icon(
+    app: AppHandle,
+    path: String,
+    size: Option<u16>,
+) -> CommandResult<FileIconResponse> {
     let icon_size = size.unwrap_or(32);
 
-    // Run the blocking icon retrieval in a separate thread
-    let result =
-        tokio::task::spawn_blocking(move || file_icon_provider::get_file_icon(&path, icon_size))
-            .await
-            .map_err(|e| format!("Task join error: {}", e))?
-            .map_err(|e| format!("Failed to get file icon: {:?}", e))?;
+    #[cfg(target_os = "linux")]
+    {
+        // file_icon_provider uses GTK on Linux. GTK APIs must run on the main
+        // thread, so do not use `spawn_blocking` here even though icon lookup can
+        // be slow; doing so causes gtk::IconTheme to panic on worker threads.
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        app.run_on_main_thread(move || {
+            let result = file_icon_provider::get_file_icon(&path, icon_size)
+                .map(file_icon_to_response)
+                .map_err(|e| format!("Failed to get file icon: {:?}", e));
+            let _ = tx.send(result);
+        })
+        .map_err(|e| format!("Failed to schedule file icon lookup: {}", e))?;
 
-    Ok(FileIconResponse {
-        data: BASE64.encode(&result.pixels),
-        width: result.width,
-        height: result.height,
-    })
+        return rx
+            .await
+            .map_err(|e| format!("File icon lookup was cancelled: {}", e))?;
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        // Run the blocking icon retrieval in a separate thread
+        let result = tokio::task::spawn_blocking(move || {
+            file_icon_provider::get_file_icon(&path, icon_size)
+        })
+        .await
+        .map_err(|e| format!("Task join error: {}", e))?
+        .map_err(|e| format!("Failed to get file icon: {:?}", e))?;
+
+        Ok(file_icon_to_response(result))
+    }
 }
 
 /// Show or create the main window (positioned at tray center)
@@ -324,11 +387,91 @@ pub fn show_main_window_center(app: &AppHandle) {
     show_main_window_at_position(app, Position::Center);
 }
 
+fn move_window_safely(window: &WebviewWindow, position: Position, label: &str) {
+    // tauri-plugin-positioner assumes tray/monitor geometry is available and
+    // can panic or error on some Linux desktop sessions when the tray position
+    // is unknown. Probe the monitor first and fall back to centering so popup
+    // display remains usable instead of crashing the runtime worker.
+    match position {
+        Position::Center => {
+            if let Err(err) = window.center() {
+                tracing::warn!(
+                    target: "main",
+                    window = label,
+                    error = %err,
+                    "Failed to center window"
+                );
+            }
+        }
+        position => match window.current_monitor() {
+            Ok(Some(_)) => {
+                if let Err(err) = window.move_window(position) {
+                    tracing::warn!(
+                        target: "main",
+                        window = label,
+                        error = %err,
+                        "Failed to move window with positioner; falling back to center"
+                    );
+                    let _ = window.center();
+                }
+            }
+            Ok(None) => {
+                tracing::warn!(
+                    target: "main",
+                    window = label,
+                    "Window has no current monitor; falling back to center"
+                );
+                let _ = window.center();
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "main",
+                    window = label,
+                    error = %err,
+                    "Failed to get current monitor; falling back to center"
+                );
+                let _ = window.center();
+            }
+        },
+    }
+}
+
+fn apply_default_window_icon<'a>(
+    builder: WebviewWindowBuilder<'a, tauri::Wry, AppHandle>,
+    app: &'a AppHandle,
+    label: &str,
+) -> Option<WebviewWindowBuilder<'a, tauri::Wry, AppHandle>> {
+    // Non-Windows desktops otherwise tend to show the Wayland/X11 default icon
+    // for custom windows. Reusing Tauri's default icon keeps taskbar entries
+    // consistent without hard-coding a platform-specific icon path here.
+    let Some(icon) = app.default_window_icon() else {
+        tracing::warn!(
+            target: "main",
+            window = label,
+            "No default window icon is configured"
+        );
+        return Some(builder);
+    };
+
+    match builder.icon(icon.clone()) {
+        Ok(builder) => Some(builder),
+        Err(err) => {
+            tracing::warn!(
+                target: "main",
+                window = label,
+                error = %err,
+                "Failed to set window icon"
+            );
+            None
+        }
+    }
+}
+
 /// Internal function to show or create the main window at a specific position
 fn show_main_window_at_position(app: &AppHandle, position: Position) {
     // Check if window already exists
     if let Some(window) = app.get_webview_window("main_popup") {
-        let _ = window.move_window(position);
+        move_window_safely(&window, position, "main_popup");
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
@@ -336,7 +479,7 @@ fn show_main_window_at_position(app: &AppHandle, position: Position) {
     }
 
     // Create new main window
-    match WebviewWindowBuilder::new(
+    let builder = WebviewWindowBuilder::new(
         app,
         "main_popup",
         WebviewUrl::App(get_url_with_lang("index.html/#/popup").into()),
@@ -347,9 +490,21 @@ fn show_main_window_at_position(app: &AppHandle, position: Position) {
     .visible(false)
     .decorations(false)
     .skip_taskbar(true)
-    .minimizable(false)
-    .build()
-    {
+    .minimizable(false);
+
+    #[cfg(not(windows))]
+    // Transparent webviews render differently across GTK/WebKit and AppKit; on
+    // non-Windows this produced unreadable shadows/ghosting. Use an opaque
+    // white background there and keep Windows transparency for Mica/Acrylic.
+    let builder = builder
+        .transparent(false)
+        .background_color(Color(255, 255, 255, 255));
+
+    let Some(builder) = apply_default_window_icon(builder, app, "main_popup") else {
+        return;
+    };
+
+    match builder.build() {
         Ok(window) => {
             // Set up close request handler for fast popup launch
             let window_clone = window.clone();
@@ -364,7 +519,7 @@ fn show_main_window_at_position(app: &AppHandle, position: Position) {
                 }
             });
 
-            let _ = window.move_window(position);
+            move_window_safely(&window, position, "main_popup");
             let _ = window.show();
             let _ = window.set_focus();
         }
@@ -437,7 +592,8 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
         return;
     }
 
-    // Create new window with mica effect
+    // Create new window with mica effect on Windows only.
+    #[cfg(windows)]
     let effects = WindowEffectsConfig {
         effects: vec![WindowEffect::Mica, WindowEffect::Acrylic],
         state: None,
@@ -450,10 +606,18 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
         .inner_size(470.0, 630.0)
         .resizable(false)
         .visible(false)
-        .transparent(true)
-        .effects(effects)
         .decorations(false)
         .minimizable(false);
+
+    #[cfg(windows)]
+    let builder = builder.transparent(true).effects(effects);
+
+    #[cfg(not(windows))]
+    // See `show_main_window_at_position`: keep non-Windows webviews opaque to
+    // avoid platform compositor artifacts while preserving Windows effects.
+    let builder = builder
+        .transparent(false)
+        .background_color(Color(255, 255, 255, 255));
 
     // Platform-specific: title_bar_style and hidden_title are macOS-only
     #[cfg(target_os = "macos")]
@@ -461,9 +625,13 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
         .title_bar_style(TitleBarStyle::Overlay)
         .hidden_title(true);
 
+    let Some(builder) = apply_default_window_icon(builder, app, "add-drive") else {
+        return;
+    };
+
     match builder.build() {
         Ok(window) => {
-            let _ = window.move_window(Position::Center);
+            move_window_safely(&window, Position::Center, "add-drive");
             let _ = window.create_overlay_titlebar();
             let _ = window.show();
             let _ = window.set_focus();
@@ -504,15 +672,26 @@ pub fn show_settings_window_impl(app: &AppHandle) {
     .decorations(false)
     .minimizable(true);
 
+    #[cfg(not(windows))]
+    // See `show_main_window_at_position`: keep non-Windows webviews opaque to
+    // avoid platform compositor artifacts while preserving Windows effects.
+    let builder = builder
+        .transparent(false)
+        .background_color(Color(255, 255, 255, 255));
+
     // Platform-specific: title_bar_style and hidden_title are macOS-only
     #[cfg(target_os = "macos")]
     let builder = builder
         .title_bar_style(TitleBarStyle::Overlay)
         .hidden_title(true);
 
+    let Some(builder) = apply_default_window_icon(builder, app, "settings") else {
+        return;
+    };
+
     match builder.build() {
         Ok(window) => {
-            let _ = window.move_window(Position::Center);
+            move_window_safely(&window, Position::Center, "settings");
             let _ = window.create_overlay_titlebar();
             let _ = window.show();
             let _ = window.set_focus();

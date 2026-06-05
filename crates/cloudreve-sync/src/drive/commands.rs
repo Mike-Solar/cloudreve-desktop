@@ -851,6 +851,30 @@ impl Mount {
                 }
             };
             if placeholder_info.is_directory() {
+                #[cfg(not(windows))]
+                {
+                    // Windows receives richer CFAPI callbacks for directory
+                    // hydration and placeholder population. Non-Windows full
+                    // sync only has filesystem watcher events, so a directory
+                    // modify event must rescan the directory's first layer to
+                    // discover newly-created children.
+                    tracing::debug!(
+                        target: "drive::commands",
+                        path = %path.display(),
+                        "Syncing directory after filesystem modify event"
+                    );
+                    if let Err(err) = self
+                        .sync_paths(vec![path.clone()], SyncMode::PathAndFirstLayer)
+                        .await
+                    {
+                        tracing::error!(
+                            target: "drive::commands",
+                            path = %path.display(),
+                            error = %err,
+                            "Failed to sync directory after filesystem modify event"
+                        );
+                    }
+                }
                 continue;
             }
 

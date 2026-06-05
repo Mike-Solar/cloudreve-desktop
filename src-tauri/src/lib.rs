@@ -1,5 +1,8 @@
 use anyhow::Context;
-use cloudreve_sync::{ConfigManager, DriveManager, EventBroadcaster, LogConfig, LogGuard, shellext::shell_service::ServiceHandle};
+use cloudreve_sync::{
+    shellext::shell_service::ServiceHandle, ConfigManager, DriveManager, EventBroadcaster,
+    LogConfig, LogGuard,
+};
 use std::sync::{Arc, Mutex};
 use tauri::{
     async_runtime::spawn,
@@ -103,6 +106,12 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
 
     // Broadcast initial connection status
     event_broadcaster.connection_status_changed(true);
+    // Capture the no-drive state now, but do not emit it until APP_STATE is
+    // installed below. The UI event handler opens the add-drive window and that
+    // command reads AppStateHandle; emitting before `app.manage(AppStateHandle)`
+    // can make the first startup report "no drive" even when later commands
+    // cannot access the initialized manager.
+    let has_no_drives = drive_manager.is_empty().await;
 
     // Store the state in the global cell
     let state = AppState {
@@ -118,6 +127,10 @@ async fn init_sync_service(app: AppHandle) -> anyhow::Result<()> {
 
     // Store in Tauri's managed state as well for commands
     app.manage(AppStateHandle);
+
+    if has_no_drives {
+        event_broadcaster.no_drive();
+    }
 
     tracing::info!(target: "main", "Tauri application setup complete");
 
@@ -193,13 +206,8 @@ fn setup_tray(app: &tauri::App) -> anyhow::Result<()> {
         true,
         None::<&str>,
     )?;
-    let settings_i = MenuItem::with_id(
-        app,
-        "settings",
-        t!("settings").as_ref(),
-        true,
-        None::<&str>,
-    )?;
+    let settings_i =
+        MenuItem::with_id(app, "settings", t!("settings").as_ref(), true, None::<&str>)?;
     let quit_i = MenuItem::with_id(app, "quit", t!("quit").as_ref(), true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&show_i, &add_drive_i, &settings_i, &quit_i])?;
 
@@ -301,6 +309,7 @@ pub fn run() {
             commands::set_ignore_patterns,
             commands::get_sync_status,
             commands::get_status_summary,
+            commands::resolve_conflict,
             commands::get_drives_info,
             commands::get_file_icon,
             commands::show_file_in_explorer,

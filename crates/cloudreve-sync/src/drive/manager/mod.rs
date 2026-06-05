@@ -4,9 +4,9 @@ mod types;
 
 pub use types::*;
 
+use crate::EventBroadcaster;
 use crate::drive::commands::ManagerCommand;
 use crate::drive::mounts::{Credentials, DriveConfig, Mount};
-use crate::EventBroadcaster;
 use crate::inventory::InventoryDb;
 use crate::tasks::TaskProgress;
 use anyhow::{Context, Result};
@@ -72,7 +72,6 @@ impl DriveManager {
 
         if !config_file.exists() {
             tracing::info!(target: "drive", "No existing drive config found, starting fresh");
-            self.event_broadcaster.no_drive();
             return Ok(());
         }
 
@@ -99,10 +98,6 @@ impl DriveManager {
                     // );
                 }
             }
-        }
-
-        if count == 0 {
-            self.event_broadcaster.no_drive();
         }
 
         tracing::info!(target: "drive", count = count, "Loaded drive(s) from config");
@@ -272,12 +267,19 @@ impl DriveManager {
 
     /// List all drives
     pub async fn list_drives(&self) -> Vec<DriveConfig> {
-        // let read_guard = self.drives.read().await;
-        // read_guard
-        //     .values()
-        //     .map(|mount| mount.get_config())
-        //     .collect()
-        Vec::new()
+        let read_guard = self.drives.read().await;
+        let mut drives = Vec::with_capacity(read_guard.len());
+
+        for mount in read_guard.values() {
+            drives.push(mount.get_config().await);
+        }
+
+        drives
+    }
+
+    /// Return whether there are currently no mounted drives.
+    pub async fn is_empty(&self) -> bool {
+        self.drives.read().await.is_empty()
     }
 
     /// Update drive configuration
@@ -456,6 +458,17 @@ impl DriveManager {
             .inventory
             .query_recent_tasks(drive_id)
             .context("Failed to query recent tasks")?;
+        // Conflict resolution is intentionally part of the status summary rather
+        // than inferred from failed upload tasks. The task error text can differ
+        // by backend response or locale, while `conflict_state = pending` is the
+        // durable inventory state used by the resolver.
+        let pending_conflicts = self
+            .inventory
+            .query_pending_conflicts(drive_id)
+            .context("Failed to query pending conflicts")?
+            .into_iter()
+            .map(Into::into)
+            .collect();
 
         // Collect running task progress from all task queues
         // Build a map of task_id -> TaskProgress for quick lookup
@@ -483,7 +496,10 @@ impl DriveManager {
             .into_iter()
             .map(|task| {
                 let progress = progress_map.remove(&task.id);
-                TaskWithProgress { task, live_progress: progress }
+                TaskWithProgress {
+                    task,
+                    live_progress: progress,
+                }
             })
             .collect();
 
@@ -491,6 +507,7 @@ impl DriveManager {
             drives,
             active_tasks,
             finished_tasks: recent_tasks.finished,
+            pending_conflicts,
         })
     }
 
@@ -595,7 +612,7 @@ impl DriveManager {
             let status = if drive_state.is_credential_expired() {
                 DriveInfoStatus::CredentialExpired
             } else {
-                if !drive_state.is_event_push_subscribed(){
+                if !drive_state.is_event_push_subscribed() {
                     DriveInfoStatus::EventPushLost
                 } else {
                     DriveInfoStatus::Active
@@ -648,7 +665,11 @@ impl DriveManager {
 impl DriveManager {
     /// Get capacity summary from a mount's drive props.
     /// Only returns capacity if the remote_path filesystem is "my".
-    fn get_capacity_summary(mount: &Mount, drive_id: &str, remote_path: &str) -> Option<CapacitySummary> {
+    fn get_capacity_summary(
+        mount: &Mount,
+        drive_id: &str,
+        remote_path: &str,
+    ) -> Option<CapacitySummary> {
         // Only show capacity for "my" filesystem
         use cloudreve_api::models::uri::CrUri;
         let is_my_fs = CrUri::new(remote_path)

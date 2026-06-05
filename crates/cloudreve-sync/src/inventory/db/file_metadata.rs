@@ -1,7 +1,5 @@
 use super::InventoryDb;
-use crate::inventory::{
-    ConflictState, FileMetadata, MetadataEntry,
-};
+use crate::inventory::{ConflictState, FileMetadata, MetadataEntry};
 use anyhow::{Context, Result};
 use diesel::prelude::*;
 use diesel::sql_types::Text;
@@ -100,6 +98,32 @@ impl InventoryDb {
             .context("Failed to query inventory metadata by id")?;
 
         row.map(FileMetadata::try_from).transpose()
+    }
+
+    /// Query files that are waiting for manual conflict resolution.
+    ///
+    /// `drive_id` is optional because the popup can show either a single drive
+    /// or the aggregate status across all configured drives.
+    pub fn query_pending_conflicts(&self, drive_id: Option<&str>) -> Result<Vec<FileMetadata>> {
+        let mut conn = self.connection()?;
+        let mut query = file_metadata_dsl::file_metadata
+            .filter(
+                file_metadata_dsl::conflict_state
+                    .eq(Some(ConflictState::Pending.as_str().to_string())),
+            )
+            .into_boxed();
+
+        if let Some(drive_id) = drive_id {
+            query = query.filter(file_metadata_dsl::drive_id.eq(drive_id));
+        }
+
+        query
+            .order(file_metadata_dsl::updated_at.desc())
+            .load::<FileMetadataRow>(&mut conn)
+            .context("Failed to query pending conflict metadata")?
+            .into_iter()
+            .map(FileMetadata::try_from)
+            .collect()
     }
 
     /// Batch delete file metadata by local path

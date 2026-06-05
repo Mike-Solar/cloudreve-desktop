@@ -34,6 +34,10 @@ build() {
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
 
+  # makepkg reuses srcdir between builds unless the caller passes -C. Remove any
+  # stale node_modules tree first so a previous pnpm/yarn-mixed install cannot
+  # leave broken package links that TypeScript later resolves during `yarn build`.
+  rm -rf ui/node_modules
   yarn --cwd ui install --frozen-lockfile
   yarn --cwd ui run build
   cargo build --release -p cloudreve-desktop

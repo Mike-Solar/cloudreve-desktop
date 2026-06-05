@@ -528,6 +528,10 @@ pub fn show_settings_window_impl(app: &AppHandle) {
 const STARTUP_TASK_ID: &str = "cloudreve";
 #[cfg(target_os = "linux")]
 const AUTOSTART_DESKTOP_FILE: &str = "cloudreve-desktop.desktop";
+#[cfg(target_os = "macos")]
+const MACOS_LAUNCH_AGENT_FILE: &str = "cloudreve.desktop.plist";
+#[cfg(target_os = "macos")]
+const MACOS_LAUNCH_AGENT_LABEL: &str = "cloudreve.desktop";
 
 #[cfg(target_os = "linux")]
 fn linux_autostart_path() -> CommandResult<std::path::PathBuf> {
@@ -615,9 +619,98 @@ fn linux_set_auto_start(enabled: bool) -> CommandResult<bool> {
     }
 }
 
+#[cfg(target_os = "macos")]
+fn macos_launch_agent_path() -> CommandResult<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .ok_or_else(|| "Unable to determine home directory".to_string())?;
+    Ok(home
+        .join("Library")
+        .join("LaunchAgents")
+        .join(MACOS_LAUNCH_AGENT_FILE))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_plist_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+        .replace('\n', "")
+        .replace('\r', "")
+}
+
+#[cfg(target_os = "macos")]
+fn macos_launch_agent_entry() -> CommandResult<String> {
+    let exe = std::env::current_exe()
+        .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+    let exe = macos_plist_escape(&exe.display().to_string());
+    let label = macos_plist_escape(MACOS_LAUNCH_AGENT_LABEL);
+
+    Ok(format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{}</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+</dict>
+</plist>
+"#,
+        label, exe
+    ))
+}
+
+#[cfg(target_os = "macos")]
+fn macos_get_auto_start_enabled() -> CommandResult<bool> {
+    let path = macos_launch_agent_path()?;
+    match std::fs::read_to_string(path) {
+        Ok(content) => Ok(content.contains(MACOS_LAUNCH_AGENT_LABEL)),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(err) => Err(format!("Failed to read LaunchAgent: {}", err)),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn macos_set_auto_start(enabled: bool) -> CommandResult<bool> {
+    let path = macos_launch_agent_path()?;
+
+    if enabled {
+        let parent = path
+            .parent()
+            .ok_or_else(|| "Invalid LaunchAgent path".to_string())?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create LaunchAgents directory: {}", e))?;
+        std::fs::write(&path, macos_launch_agent_entry()?)
+            .map_err(|e| format!("Failed to write LaunchAgent: {}", e))?;
+        Ok(true)
+    } else {
+        match std::fs::remove_file(&path) {
+            Ok(_) => Ok(false),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(err) => Err(format!("Failed to remove LaunchAgent: {}", err)),
+        }
+    }
+}
+
 /// Get whether auto-start is enabled using Windows StartupTask API
 #[tauri::command]
 pub async fn get_auto_start_enabled() -> CommandResult<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        return tokio::task::spawn_blocking(macos_get_auto_start_enabled)
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?;
+    }
+
     #[cfg(target_os = "linux")]
     {
         return tokio::task::spawn_blocking(linux_get_auto_start_enabled)
@@ -625,7 +718,7 @@ pub async fn get_auto_start_enabled() -> CommandResult<bool> {
             .map_err(|e| format!("Task join error: {}", e))?;
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Ok(false)
     }
@@ -656,6 +749,13 @@ pub async fn get_auto_start_enabled() -> CommandResult<bool> {
 /// Set auto-start configuration using Windows StartupTask API
 #[tauri::command]
 pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
+    #[cfg(target_os = "macos")]
+    {
+        return tokio::task::spawn_blocking(move || macos_set_auto_start(enabled))
+            .await
+            .map_err(|e| format!("Task join error: {}", e))?;
+    }
+
     #[cfg(target_os = "linux")]
     {
         return tokio::task::spawn_blocking(move || linux_set_auto_start(enabled))
@@ -663,7 +763,7 @@ pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
             .map_err(|e| format!("Task join error: {}", e))?;
     }
 
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Err("Auto-start configuration is not supported on this platform yet".to_string())
     }

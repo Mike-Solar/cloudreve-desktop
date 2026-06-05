@@ -50,6 +50,9 @@ win32_notif = { path = "../win32_notif" }
 [target.'cfg(target_os = "linux")'.dependencies]
 notify-rust = "4.11"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+mac-notification-sys = "0.6"
+
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.58.0"
 features = [

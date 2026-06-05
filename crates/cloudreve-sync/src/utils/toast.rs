@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 #[cfg(windows)]
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
+#[cfg(target_os = "macos")]
+use mac_notification_sys::send_notification;
 #[cfg(target_os = "linux")]
 use notify_rust::{Notification, Timeout, Urgency};
 #[cfg(windows)]
@@ -17,7 +19,7 @@ use crate::config::ConfigManager;
 
 #[cfg(windows)]
 const APP_NAME: &str = "Cloudreve.Sync";
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 const APP_NAME: &str = "Cloudreve";
 
 #[cfg(target_os = "linux")]
@@ -40,6 +42,30 @@ fn send_linux_notification(title: &str, message: &str, urgency: Urgency) {
             "Failed to send Linux desktop notification"
         ),
     }
+}
+
+#[cfg(target_os = "macos")]
+fn send_macos_notification(title: &str, message: &str) {
+    match send_notification(title, Some(APP_NAME), message, None) {
+        Ok(_) => tracing::debug!(target: "toast", title, message, "macOS notification sent"),
+        Err(err) => tracing::warn!(
+            target: "toast",
+            title,
+            message,
+            error = %err,
+            "Failed to send macOS user notification"
+        ),
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "macos"))]
+fn conflict_notification_message(path: &PathBuf) -> String {
+    let file_name = path
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    format!("{} - open Cloudreve to resolve the conflict.", file_name)
 }
 
 #[cfg(windows)]
@@ -70,7 +96,12 @@ pub fn send_general_text_toast(title: &str, message: &str) {
     send_linux_notification(title, message, Urgency::Normal);
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+pub fn send_general_text_toast(title: &str, message: &str) {
+    send_macos_notification(title, message);
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn send_general_text_toast(title: &str, message: &str) {
     tracing::info!(target: "toast", title, message, "Toast notification skipped on this platform");
 }
@@ -108,7 +139,12 @@ pub fn send_warning_toast(title: &str, message: &str) {
     send_linux_notification(title, message, Urgency::Critical);
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+pub fn send_warning_toast(title: &str, message: &str) {
+    send_macos_notification(title, message);
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn send_warning_toast(title: &str, message: &str) {
     tracing::warn!(target: "toast", title, message, "Warning toast skipped on this platform");
 }
@@ -168,7 +204,18 @@ pub fn send_token_expiry_toast(_drive_id: &str, title: &str, message: &str) {
     send_linux_notification(title, message, Urgency::Critical);
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+pub fn send_token_expiry_toast(_drive_id: &str, title: &str, message: &str) {
+    if let Some(config) = ConfigManager::try_get() {
+        if !config.notify_credential_expired() {
+            tracing::debug!(target: "toast", "Token expiry notification suppressed by config");
+            return;
+        }
+    }
+    send_macos_notification(title, message);
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn send_token_expiry_toast(_drive_id: &str, title: &str, message: &str) {
     if let Some(config) = ConfigManager::try_get() {
         if !config.notify_credential_expired() {
@@ -256,12 +303,7 @@ pub fn send_conflict_toast(_drive_id: &str, path: &PathBuf, inventory_id: i64) {
         }
     }
 
-    let file_name = path
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    let message = format!("{} - open Cloudreve to resolve the conflict.", file_name);
+    let message = conflict_notification_message(path);
     tracing::warn!(
         target: "toast",
         path = %path.display(),
@@ -271,7 +313,26 @@ pub fn send_conflict_toast(_drive_id: &str, path: &PathBuf, inventory_id: i64) {
     send_linux_notification(&t!("conflictToastTitle"), &message, Urgency::Critical);
 }
 
-#[cfg(not(any(windows, target_os = "linux")))]
+#[cfg(target_os = "macos")]
+pub fn send_conflict_toast(_drive_id: &str, path: &PathBuf, inventory_id: i64) {
+    if let Some(config) = ConfigManager::try_get() {
+        if !config.notify_file_conflict() {
+            tracing::debug!(target: "toast", "Conflict notification suppressed by config");
+            return;
+        }
+    }
+
+    let message = conflict_notification_message(path);
+    tracing::warn!(
+        target: "toast",
+        path = %path.display(),
+        inventory_id,
+        "Sending macOS conflict notification without Windows toast actions"
+    );
+    send_macos_notification(&t!("conflictToastTitle"), &message);
+}
+
+#[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
 pub fn send_conflict_toast(_drive_id: &str, path: &PathBuf, inventory_id: i64) {
     if let Some(config) = ConfigManager::try_get() {
         if !config.notify_file_conflict() {

@@ -2,7 +2,6 @@ use crate::{
     cfapi::{
         filter::ticket,
         placeholder::{LocalFileInfo, OpenOptions, PinState},
-        utility::WriteAt,
     },
     drive::{
         mounts::Mount,
@@ -39,7 +38,10 @@ use std::{
 };
 use tokio::sync::oneshot::Sender;
 use uuid::Uuid;
+#[cfg(windows)]
 use windows::Win32::UI::Shell::SHCNE_ATTRIBUTES;
+#[cfg(not(windows))]
+const SHCNE_ATTRIBUTES: u32 = 0;
 const PAGE_SIZE: i32 = 1000;
 
 /// Generate a unique filename by appending a counter suffix before the extension.

@@ -14,6 +14,7 @@ use tauri::{
 use tauri_plugin_frame::WebviewWindowExt;
 use tauri_plugin_positioner::{Position, WindowExt};
 use uuid::Uuid;
+#[cfg(windows)]
 use windows::ApplicationModel::{StartupTask, StartupTaskState};
 
 /// Result type for Tauri commands
@@ -519,11 +520,19 @@ pub fn show_settings_window_impl(app: &AppHandle) {
 }
 
 /// The TaskId defined in AppxManifest.xml for the startup task
+#[cfg(windows)]
 const STARTUP_TASK_ID: &str = "cloudreve";
 
 /// Get whether auto-start is enabled using Windows StartupTask API
 #[tauri::command]
 pub async fn get_auto_start_enabled() -> CommandResult<bool> {
+    #[cfg(not(windows))]
+    {
+        return Ok(false);
+    }
+
+    #[cfg(windows)]
+    {
     tokio::task::spawn_blocking(|| {
         let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
         let task = StartupTask::GetAsync(&task_id)
@@ -542,11 +551,20 @@ pub async fn get_auto_start_enabled() -> CommandResult<bool> {
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
+    }
 }
 
 /// Set auto-start configuration using Windows StartupTask API
 #[tauri::command]
 pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
+    #[cfg(not(windows))]
+    {
+        let _ = enabled;
+        return Err("Auto-start configuration is not supported on this platform yet".to_string());
+    }
+
+    #[cfg(windows)]
+    {
     tokio::task::spawn_blocking(move || {
         let task_id: windows::core::HSTRING = STARTUP_TASK_ID.into();
         let task = StartupTask::GetAsync(&task_id)
@@ -574,6 +592,7 @@ pub async fn set_auto_start(enabled: bool) -> CommandResult<bool> {
     })
     .await
     .map_err(|e| format!("Task join error: {}", e))?
+    }
 }
 
 /// Set notification settings for credential expiry

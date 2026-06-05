@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 use cloudreve_api::models::uri::CrUri;
 use url::Url;
+#[cfg(windows)]
 use widestring::U16CString;
+#[cfg(windows)]
 use windows::Win32::UI::Shell::{SHCNE_ID, SHCNF_PATHW, SHChangeNotify};
 
 use crate::drive::mounts::DriveConfig;
@@ -93,6 +95,7 @@ pub fn recycle_bin_url(config: &DriveConfig) -> Result<String> {
 }
 
 // notify_shell_change notify the shell to refresh the file or directory
+#[cfg(windows)]
 pub fn notify_shell_change(path: &PathBuf, event: SHCNE_ID) -> Result<()> {
     let utf16_path = U16CString::from_os_str(path.as_path())?;
     unsafe {
@@ -103,5 +106,10 @@ pub fn notify_shell_change(path: &PathBuf, event: SHCNE_ID) -> Result<()> {
             None,
         );
     }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn notify_shell_change(_path: &PathBuf, _event: u32) -> Result<()> {
     Ok(())
 }

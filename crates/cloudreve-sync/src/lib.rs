@@ -1,9 +1,17 @@
+#[cfg(windows)]
+pub mod cfapi;
+#[cfg(not(windows))]
+#[path = "cfapi/non_windows.rs"]
 pub mod cfapi;
 pub mod config;
 pub mod drive;
 pub mod events;
 pub mod inventory;
 pub mod logging;
+#[cfg(windows)]
+pub mod shellext;
+#[cfg(not(windows))]
+#[path = "shellext/non_windows.rs"]
 pub mod shellext;
 pub mod tasks;
 pub mod uploader;

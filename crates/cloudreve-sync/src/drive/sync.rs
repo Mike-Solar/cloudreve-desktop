@@ -585,6 +585,17 @@ impl Mount {
                         "Failed to create placeholder and inventory"
                     );
                     aggregate_error.push(path.clone(), err);
+                } else {
+                    #[cfg(not(windows))]
+                    if remote.file_type != file_type::FOLDER {
+                        if let Err(err) = self
+                            .task_queue
+                            .enqueue(TaskPayload::download(path.clone()))
+                            .await
+                        {
+                            aggregate_error.push(path.clone(), anyhow::Error::from(err));
+                        }
+                    }
                 }
             }
             SyncAction::UpdateInventoryFromRemote {
@@ -607,6 +618,17 @@ impl Mount {
                         "Failed to update inventory from remote"
                     );
                     aggregate_error.push(path.clone(), err);
+                } else {
+                    #[cfg(not(windows))]
+                    if remote.file_type != file_type::FOLDER {
+                        if let Err(err) = self
+                            .task_queue
+                            .enqueue(TaskPayload::download(path.clone()))
+                            .await
+                        {
+                            aggregate_error.push(path.clone(), anyhow::Error::from(err));
+                        }
+                    }
                 }
             }
             SyncAction::QueueUpload { path, reason } => {

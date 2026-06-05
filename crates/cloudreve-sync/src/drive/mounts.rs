@@ -1,13 +1,16 @@
+#[cfg(windows)]
 use crate::cfapi::root::{
-    Connection, HydrationType, PopulationType, SecurityId, Session, SyncRootId, SyncRootIdBuilder,
-    SyncRootInfo,
+    HydrationType, PopulationType, SecurityId, Session, SyncRootIdBuilder, SyncRootInfo,
 };
+use crate::cfapi::root::{Connection, SyncRootId};
+#[cfg(windows)]
 use crate::drive::callback::CallbackHandler;
 use crate::drive::commands::ManagerCommand;
 use crate::drive::commands::MountCommand;
 use crate::drive::event_blocker::EventBlocker;
 use crate::drive::ignore::IgnoreMatcher;
 use crate::drive::sync::group_fs_events;
+#[cfg(windows)]
 use crate::drive::utils::recycle_bin_url;
 use crate::inventory::{DrivePropsUpdate, InventoryDb, TaskRecord};
 use crate::tasks::{TaskProgress, TaskQueue, TaskQueueConfig};
@@ -18,6 +21,7 @@ use cloudreve_api::api::user::UserApi;
 use cloudreve_api::{Client, ClientConfig, models::user::Token};
 use notify_debouncer_full::notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_full::{DebounceEventResult, Debouncer, RecommendedCache, new_debouncer};
+#[cfg(windows)]
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 use std::{
@@ -28,8 +32,15 @@ use std::{
 use tokio::spawn;
 use tokio::sync::{Mutex, RwLock, mpsc};
 use tokio::task::JoinHandle;
+#[cfg(windows)]
 use url::Url;
+#[cfg(windows)]
 use windows::Storage::Provider::StorageProviderSyncRootManager;
+
+#[cfg(windows)]
+type MountConnection = Connection<CallbackHandler>;
+#[cfg(not(windows))]
+type MountConnection = Connection<()>;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DriveConfig {
     pub id: String,
@@ -128,7 +139,7 @@ type FsWatcher = Debouncer<RecommendedWatcher, RecommendedCache>;
 
 pub struct Mount {
     pub config: Arc<RwLock<DriveConfig>>,
-    connection: Option<Connection<CallbackHandler>>,
+    connection: Option<MountConnection>,
     pub command_tx: mpsc::UnboundedSender<MountCommand>,
     command_rx: Arc<Mutex<Option<mpsc::UnboundedReceiver<MountCommand>>>>,
     processor_handle: Arc<Mutex<Option<JoinHandle<()>>>>,
@@ -371,6 +382,18 @@ impl Mount {
     }
 
     pub async fn start(&mut self) -> Result<()> {
+        #[cfg(not(windows))]
+        {
+            let sync_path = self.config.read().await.sync_path.clone();
+            std::fs::create_dir_all(&sync_path).context("failed to create sync directory")?;
+            self.start_fs_watcher().await?;
+            self.sync_paths(vec![sync_path], crate::drive::sync::SyncMode::FullHierarchy)
+                .await?;
+            return Ok(());
+        }
+
+        #[cfg(windows)]
+        {
         if !StorageProviderSyncRootManager::IsSupported()
             .context("Cloud Filter API is not supported")?
         {
@@ -441,6 +464,7 @@ impl Mount {
         self.connection = Some(connection);
         self.start_fs_watcher().await?;
         Ok(())
+        }
     }
 
     pub async fn start_fs_watcher(&self) -> Result<()> {
@@ -763,6 +787,7 @@ impl Mount {
     }
 }
 
+#[cfg(windows)]
 fn generate_sync_root_id(
     instance_url: &str,
     _account_name: &str,

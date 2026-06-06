@@ -2,10 +2,12 @@ import {
   Alert,
   Box,
   Button,
+  Collapse,
   Link,
   ListItem,
   ListItemIcon,
   ListItemText,
+  Stack,
   Typography,
 } from "@mui/material";
 import { WarningAmber as WarningIcon } from "@mui/icons-material";
@@ -31,6 +33,7 @@ export default function ConflictItem({
   const [resolvingAction, setResolvingAction] = useState<ConflictAction | null>(
     null
   );
+  const [actionsOpen, setActionsOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileName = getFileName(conflict.local_path);
   const parentFolderName = getParentFolderName(conflict.local_path);
@@ -99,6 +102,7 @@ export default function ConflictItem({
         </Box>
       </ListItemIcon>
       <ListItemText
+        disableTypography
         primary={
           <Typography variant="body2" noWrap sx={{ fontWeight: 600 }}>
             {fileName}
@@ -116,54 +120,73 @@ export default function ConflictItem({
                 "Local file conflicts with the remote version"
               )}
             </Typography>
-            <Typography
-              variant="caption"
-              color="text.secondary"
-              component="span"
+            <Stack
+              direction="row"
+              spacing={1}
+              alignItems="center"
+              justifyContent="space-between"
+              sx={{ mt: 1, minWidth: 0 }}
             >
-              {" · "}
-            </Typography>
-            <Link
-              component="button"
-              variant="caption"
-              color="text.secondary"
-              onClick={handleShowInExplorer}
-              underline="always"
-            >
-              {parentFolderName}
-            </Link>
-            <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={isResolving}
-                onClick={() => handleResolve("keep_remote")}
+              <Link
+                component="button"
+                variant="caption"
+                color="text.secondary"
+                onClick={handleShowInExplorer}
+                underline="always"
+                sx={{
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
               >
-                {resolvingAction === "keep_remote"
-                  ? t("popup.resolving", "Resolving...")
-                  : t("popup.keepRemote", "Keep remote")}
-              </Button>
+                {parentFolderName}
+              </Link>
               <Button
                 size="small"
                 variant="contained"
+                color="warning"
                 disabled={isResolving}
-                onClick={() => handleResolve("overwrite_remote")}
+                onClick={() => setActionsOpen((open) => !open)}
+                sx={{ flexShrink: 0 }}
               >
-                {resolvingAction === "overwrite_remote"
-                  ? t("popup.resolving", "Resolving...")
-                  : t("popup.overwriteRemote", "Overwrite remote")}
+                {t("popup.resolveConflict", "Resolve conflict")}
               </Button>
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={isResolving}
-                onClick={() => handleResolve("save_as_new")}
-              >
-                {resolvingAction === "save_as_new"
-                  ? t("popup.resolving", "Resolving...")
-                  : t("popup.saveAsNew", "Save as new")}
-              </Button>
-            </Box>
+            </Stack>
+            <Collapse in={actionsOpen} timeout="auto" unmountOnExit>
+              <Box sx={{ display: "flex", gap: 0.75, flexWrap: "wrap", mt: 1 }}>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={isResolving}
+                  onClick={() => handleResolve("keep_remote")}
+                >
+                  {resolvingAction === "keep_remote"
+                    ? t("popup.resolving", "Resolving...")
+                    : t("popup.keepRemote", "Keep remote")}
+                </Button>
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={isResolving}
+                  onClick={() => handleResolve("overwrite_remote")}
+                >
+                  {resolvingAction === "overwrite_remote"
+                    ? t("popup.resolving", "Resolving...")
+                    : t("popup.overwriteRemote", "Overwrite remote")}
+                </Button>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  disabled={isResolving}
+                  onClick={() => handleResolve("save_as_new")}
+                >
+                  {resolvingAction === "save_as_new"
+                    ? t("popup.resolving", "Resolving...")
+                    : t("popup.saveAsNew", "Save as new")}
+                </Button>
+              </Box>
+            </Collapse>
             {error && (
               <Alert severity="error" sx={{ mt: 1, py: 0 }}>
                 {error}

@@ -535,8 +535,11 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                       }}
                     />
                     {folderNotEmpty && (
-                      <Alert severity="error" sx={{ mt: -1 }}>
-                        {t("addDrive.folderNotEmpty")}
+                      <Alert severity="info" sx={{ mt: -1 }}>
+                        {t(
+                          "addDrive.folderNotEmptyWillSync",
+                          "This folder already has files. Existing local content will be merged into the remote drive; same-name files with matching hashes will be treated as already synced."
+                        )}
                       </Alert>
                     )}
                   </>
@@ -547,7 +550,6 @@ export default function AddDrive({ mode = "add" }: AddDriveProps) {
                   variant="contained"
                   size="large"
                   fullWidth
-                  disabled={folderNotEmpty}
                 >
                   {isReauthorize ? t("addDrive.reauthorizeConfirm") : t("addDrive.finish")}
                 </Button>

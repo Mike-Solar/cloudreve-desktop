@@ -23,15 +23,19 @@ use cloudreve_api::{
         uri::CrUri,
     },
 };
+use md5::Md5;
 use notify_debouncer_full::notify::event::{
     AccessKind, CreateKind, EventKind, ModifyKind, RemoveKind, RenameMode,
 };
 use notify_debouncer_full::{DebouncedEvent, notify::Event};
 use nt_time::FileTime;
+use sha1::Sha1;
+use sha2::{Digest, Sha256};
 use std::{
     collections::{HashMap, HashSet},
     ffi::OsString,
     fmt, fs, io,
+    io::Read,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -111,6 +115,39 @@ pub fn cloud_file_to_metadata_entry(
             .clone(),
     )
     .with_metadata(file.metadata.as_ref().unwrap_or(&HashMap::new()).clone()))
+}
+
+fn cloud_file_to_metadata_entry_at_path(
+    file: &FileResponse,
+    drive_id: &Uuid,
+    local_path: &Path,
+    conflict_state: Option<ConflictState>,
+) -> Result<MetadataEntry> {
+    let local_path_str = local_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Failed to convert local path to string"))?;
+    let created_at = file.created_at.parse::<DateTime<Utc>>()?.timestamp();
+    let last_modified = file.updated_at.parse::<DateTime<Utc>>()?.timestamp();
+
+    let mut entry = MetadataEntry::new(
+        drive_id.clone(),
+        local_path_str,
+        file.file_type == file_type::FOLDER,
+    )
+    .with_created_at(created_at)
+    .with_updated_at(last_modified)
+    .with_permissions(file.permission.as_ref().unwrap_or(&String::new()).clone())
+    .with_shared(file.shared.unwrap_or(false))
+    .with_size(file.size)
+    .with_etag(
+        file.primary_entity
+            .as_ref()
+            .unwrap_or(&String::new())
+            .clone(),
+    )
+    .with_metadata(file.metadata.as_ref().unwrap_or(&HashMap::new()).clone());
+    entry.conflict_state = conflict_state;
+    Ok(entry)
 }
 
 pub fn is_symbolic_link(file: &FileResponse) -> bool {
@@ -199,6 +236,11 @@ enum SyncAction {
         path: PathBuf,
         remote: FileResponse,
     },
+    RecordInventoryFromRemote {
+        path: PathBuf,
+        remote: FileResponse,
+        mark_conflicted: bool,
+    },
     // Update inventory and placehodler metadata, conver to placehodler if it's not one
     UpdateInventoryFromRemote {
         path: PathBuf,
@@ -256,6 +298,47 @@ struct WalkRequest {
 struct SyncPlan {
     actions: Vec<SyncAction>,
     walk_requests: Vec<WalkRequest>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HashAlgorithm {
+    Md5,
+    Sha1,
+    Sha256,
+    Sha512,
+}
+
+impl HashAlgorithm {
+    fn from_hex_len(len: usize) -> Option<Self> {
+        match len {
+            32 => Some(Self::Md5),
+            40 => Some(Self::Sha1),
+            64 => Some(Self::Sha256),
+            128 => Some(Self::Sha512),
+            _ => None,
+        }
+    }
+
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Md5 => "md5",
+            Self::Sha1 => "sha1",
+            Self::Sha256 => "sha256",
+            Self::Sha512 => "sha512",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct FileHashFingerprint {
+    algorithm: HashAlgorithm,
+    value: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExistingRemoteLocalFileDecision {
+    SameContent,
+    Conflict,
 }
 
 // Debug print for SyncPlan
@@ -384,6 +467,135 @@ fn next_child_mode(mode: SyncMode) -> SyncMode {
         SyncMode::PathAndFirstLayer => SyncMode::PathOnly,
         SyncMode::PathOnly => SyncMode::PathOnly,
     }
+}
+
+fn normalize_hash_value(value: &str) -> Option<String> {
+    let normalized = value
+        .trim()
+        .trim_matches('"')
+        .to_ascii_lowercase()
+        .replace('-', "");
+    if normalized.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        Some(normalized)
+    } else {
+        None
+    }
+}
+
+fn hash_fingerprint_from_value(value: &str) -> Option<FileHashFingerprint> {
+    let normalized = normalize_hash_value(value)?;
+    let algorithm = HashAlgorithm::from_hex_len(normalized.len())?;
+    Some(FileHashFingerprint {
+        algorithm,
+        value: normalized,
+    })
+}
+
+fn normalize_hash_key(key: &str) -> String {
+    key.chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+fn remote_file_hash_fingerprint(remote: &FileResponse) -> Option<FileHashFingerprint> {
+    const HASH_METADATA_KEYS: &[(&str, HashAlgorithm)] = &[
+        ("md5", HashAlgorithm::Md5),
+        ("hashmd5", HashAlgorithm::Md5),
+        ("checksummd5", HashAlgorithm::Md5),
+        ("sha1", HashAlgorithm::Sha1),
+        ("hashsha1", HashAlgorithm::Sha1),
+        ("checksumsha1", HashAlgorithm::Sha1),
+        ("sha256", HashAlgorithm::Sha256),
+        ("hashsha256", HashAlgorithm::Sha256),
+        ("checksumsha256", HashAlgorithm::Sha256),
+        ("sha512", HashAlgorithm::Sha512),
+        ("hashsha512", HashAlgorithm::Sha512),
+        ("checksumsha512", HashAlgorithm::Sha512),
+    ];
+
+    // Cloudreve does not expose a dedicated typed content-hash field in
+    // FileResponse. Prefer explicit metadata keys first so the comparison uses
+    // whatever hash algorithm the server actually publishes.
+    if let Some(metadata) = remote.metadata.as_ref() {
+        for (key, value) in metadata {
+            let normalized_key = normalize_hash_key(key);
+            for (hash_key, algorithm) in HASH_METADATA_KEYS {
+                if normalized_key == *hash_key {
+                    if let Some(value) = normalize_hash_value(value) {
+                        return Some(FileHashFingerprint {
+                            algorithm: *algorithm,
+                            value,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Some server responses may put a content entity/hash in primary_entity.
+    // Treat it as a hash only when it has a known digest length; otherwise it
+    // remains an opaque etag and is not safe for local-content equality.
+    remote
+        .primary_entity
+        .as_deref()
+        .and_then(hash_fingerprint_from_value)
+}
+
+async fn calculate_file_hash(path: PathBuf, algorithm: HashAlgorithm) -> Result<String> {
+    task::spawn_blocking(move || -> Result<String> {
+        let mut file = fs::File::open(&path)
+            .with_context(|| format!("failed to open file {}", path.display()))?;
+        let mut buffer = [0u8; 64 * 1024];
+
+        match algorithm {
+            HashAlgorithm::Md5 => {
+                let mut hasher = Md5::new();
+                loop {
+                    let read = file.read(&mut buffer)?;
+                    if read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..read]);
+                }
+                Ok(format!("{:x}", hasher.finalize()))
+            }
+            HashAlgorithm::Sha1 => {
+                let mut hasher = Sha1::new();
+                loop {
+                    let read = file.read(&mut buffer)?;
+                    if read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..read]);
+                }
+                Ok(format!("{:x}", hasher.finalize()))
+            }
+            HashAlgorithm::Sha256 => {
+                let mut hasher = Sha256::new();
+                loop {
+                    let read = file.read(&mut buffer)?;
+                    if read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..read]);
+                }
+                Ok(format!("{:x}", hasher.finalize()))
+            }
+            HashAlgorithm::Sha512 => {
+                let mut hasher = sha2::Sha512::new();
+                loop {
+                    let read = file.read(&mut buffer)?;
+                    if read == 0 {
+                        break;
+                    }
+                    hasher.update(&buffer[..read]);
+                }
+                Ok(format!("{:x}", hasher.finalize()))
+            }
+        }
+    })
+    .await?
 }
 
 /// Result of collecting child targets, including pre-fetched remote file info.
@@ -601,6 +813,54 @@ impl Mount {
                             aggregate_error.push(path.clone(), anyhow::Error::from(err));
                         }
                     }
+                }
+            }
+            SyncAction::RecordInventoryFromRemote {
+                path,
+                remote,
+                mark_conflicted,
+            } => {
+                if *mark_conflicted {
+                    match cloud_file_to_metadata_entry_at_path(
+                        remote,
+                        drive_id,
+                        path,
+                        Some(ConflictState::Pending),
+                    )
+                    .and_then(|entry| {
+                        self.inventory
+                            .upsert(&entry)
+                            .context("failed to upsert conflicted inventory metadata")
+                    }) {
+                        Ok(_) => {}
+                        Err(err) => {
+                            tracing::error!(
+                                target: "drive::sync",
+                                id = %self.id,
+                                path = %path.display(),
+                                error = ?err,
+                                "Failed to record existing local file conflict"
+                            );
+                            aggregate_error.push(path.clone(), err);
+                        }
+                    }
+                    return;
+                }
+
+                let cr_placeholder =
+                    CrPlaceholder::new(path.clone(), sync_root.clone(), drive_id.clone());
+                if let Err(err) = cr_placeholder
+                    .with_remote_file(remote)
+                    .commit(self.inventory.clone())
+                {
+                    tracing::error!(
+                        target: "drive::sync",
+                        id = %self.id,
+                        path = %path.display(),
+                        error = ?err,
+                        "Failed to record existing local file inventory"
+                    );
+                    aggregate_error.push(path.clone(), err);
                 }
             }
             SyncAction::UpdateInventoryFromRemote {
@@ -969,10 +1229,100 @@ impl Mount {
                 .unwrap_or_else(LocalFileInfo::missing);
             let remote = remote_files.get(path);
             let inventory = inventory_entries.get(path);
+            if let (Some(remote), Some(local_info)) = (remote, local_files.get(path)) {
+                // This handles attaching a non-empty local directory to an
+                // existing remote tree. With no inventory row yet, a same-name
+                // local/remote file must be resolved before normal sync would
+                // treat the local file as a fresh upload or the remote file as
+                // a placeholder/download target.
+                if let Some(decision) = self
+                    .decide_existing_local_remote_file(path, remote, local_info, inventory)
+                    .await
+                {
+                    let mark_conflicted = decision == ExistingRemoteLocalFileDecision::Conflict;
+                    plan.actions.push(SyncAction::RecordInventoryFromRemote {
+                        path: path.clone(),
+                        remote: remote.clone(),
+                        mark_conflicted,
+                    });
+                    if mark_conflicted {
+                        tracing::info!(
+                            target: "drive::sync",
+                            id = %self.id,
+                            path = %path.display(),
+                            "Existing local file conflicts with same-name remote file; queued conflict metadata"
+                        );
+                    }
+                    continue;
+                }
+            }
             self.plan_entry_actions(path, mode, remote, &local_info, inventory, &mut plan);
         }
 
         plan
+    }
+
+    async fn decide_existing_local_remote_file(
+        &self,
+        path: &PathBuf,
+        remote: &FileResponse,
+        local: &LocalFileInfo,
+        inventory: Option<&FileMetadata>,
+    ) -> Option<ExistingRemoteLocalFileDecision> {
+        if inventory.is_some()
+            || !local.exists
+            || local.is_directory
+            || local.is_placeholder()
+            || remote.file_type == file_type::FOLDER
+        {
+            return None;
+        }
+
+        let Some(remote_fingerprint) = remote_file_hash_fingerprint(remote) else {
+            tracing::info!(
+                target: "drive::sync",
+                id = %self.id,
+                path = %path.display(),
+                "Remote file has no supported hash fingerprint; treating same-name local file as conflict"
+            );
+            return Some(ExistingRemoteLocalFileDecision::Conflict);
+        };
+
+        match calculate_file_hash(path.clone(), remote_fingerprint.algorithm).await {
+            Ok(local_hash) if local_hash.eq_ignore_ascii_case(&remote_fingerprint.value) => {
+                tracing::info!(
+                    target: "drive::sync",
+                    id = %self.id,
+                    path = %path.display(),
+                    algorithm = %remote_fingerprint.algorithm.as_str(),
+                    "Existing local file matches remote hash; recording inventory without upload/download"
+                );
+                Some(ExistingRemoteLocalFileDecision::SameContent)
+            }
+            Ok(local_hash) => {
+                tracing::info!(
+                    target: "drive::sync",
+                    id = %self.id,
+                    path = %path.display(),
+                    algorithm = %remote_fingerprint.algorithm.as_str(),
+                    local_hash = %local_hash,
+                    remote_hash = %remote_fingerprint.value,
+                    "Existing local file differs from remote hash; treating as conflict candidate"
+                );
+                Some(ExistingRemoteLocalFileDecision::Conflict)
+            }
+            Err(err) => {
+                tracing::warn!(
+                    target: "drive::sync",
+                    id = %self.id,
+                    path = %path.display(),
+                    error = %err,
+                    algorithm = %remote_fingerprint.algorithm.as_str(),
+                    "Failed to calculate local hash; treating same-name local file as conflict candidate"
+                );
+                Some(ExistingRemoteLocalFileDecision::Conflict)
+            }
+        }
     }
 
     fn plan_entry_actions(

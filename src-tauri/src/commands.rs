@@ -338,7 +338,7 @@ fn file_icon_to_response(icon: file_icon_provider::Icon) -> FileIconResponse {
 /// Returns base64 encoded RGBA pixel data with dimensions
 #[tauri::command]
 pub async fn get_file_icon(
-    app: AppHandle,
+    _app: AppHandle,
     path: String,
     size: Option<u16>,
 ) -> CommandResult<FileIconResponse> {
@@ -496,9 +496,7 @@ fn show_main_window_at_position(app: &AppHandle, position: Position) {
     // Transparent webviews render differently across GTK/WebKit and AppKit; on
     // non-Windows this produced unreadable shadows/ghosting. Use an opaque
     // white background there and keep Windows transparency for Mica/Acrylic.
-    let builder = builder
-        .transparent(false)
-        .background_color(Color(255, 255, 255, 255));
+    let builder = builder.background_color(Color(255, 255, 255, 255));
 
     let Some(builder) = apply_default_window_icon(builder, app, "main_popup") else {
         return;
@@ -609,15 +607,10 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
         .decorations(false)
         .minimizable(false);
 
-    #[cfg(windows)]
-    let builder = builder.transparent(true).effects(effects);
-
     #[cfg(not(windows))]
     // See `show_main_window_at_position`: keep non-Windows webviews opaque to
     // avoid platform compositor artifacts while preserving Windows effects.
-    let builder = builder
-        .transparent(false)
-        .background_color(Color(255, 255, 255, 255));
+    let builder = builder.background_color(Color(255, 255, 255, 255));
 
     // Platform-specific: title_bar_style and hidden_title are macOS-only
     #[cfg(target_os = "macos")]
@@ -631,6 +624,11 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
 
     match builder.build() {
         Ok(window) => {
+            #[cfg(windows)]
+            {
+                let _ = window.set_transparent(true);
+                let _ = window.set_effects(effects);
+            }
             move_window_safely(&window, Position::Center, "add-drive");
             let _ = window.create_overlay_titlebar();
             let _ = window.show();
@@ -675,9 +673,7 @@ pub fn show_settings_window_impl(app: &AppHandle) {
     #[cfg(not(windows))]
     // See `show_main_window_at_position`: keep non-Windows webviews opaque to
     // avoid platform compositor artifacts while preserving Windows effects.
-    let builder = builder
-        .transparent(false)
-        .background_color(Color(255, 255, 255, 255));
+    let builder = builder.background_color(Color(255, 255, 255, 255));
 
     // Platform-specific: title_bar_style and hidden_title are macOS-only
     #[cfg(target_os = "macos")]
@@ -691,6 +687,11 @@ pub fn show_settings_window_impl(app: &AppHandle) {
 
     match builder.build() {
         Ok(window) => {
+            #[cfg(windows)]
+            {
+                let _ = window.set_transparent(true);
+                let _ = window.set_effects(effects);
+            }
             move_window_safely(&window, Position::Center, "settings");
             let _ = window.create_overlay_titlebar();
             let _ = window.show();

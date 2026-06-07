@@ -339,7 +339,7 @@ fn file_icon_to_response(icon: file_icon_provider::Icon) -> FileIconResponse {
 /// Returns base64 encoded RGBA pixel data with dimensions
 #[tauri::command]
 pub async fn get_file_icon(
-    _app: AppHandle,
+    app: AppHandle,
     path: String,
     size: Option<u16>,
 ) -> CommandResult<FileIconResponse> {

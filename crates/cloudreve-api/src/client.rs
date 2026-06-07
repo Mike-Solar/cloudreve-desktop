@@ -152,7 +152,8 @@ impl Client {
     /// Create a new API client
     pub fn new(config: ClientConfig) -> Self {
         let mut builder = HttpClient::builder()
-            .connect_timeout(std::time::Duration::from_secs(config.timeout_seconds));
+            .connect_timeout(std::time::Duration::from_secs(config.timeout_seconds))
+            .timeout(std::time::Duration::from_secs(config.timeout_seconds));
 
         if let Some(ref user_agent) = config.user_agent {
             builder = builder.user_agent(user_agent);

@@ -387,8 +387,6 @@ impl Mount {
             let sync_path = self.config.read().await.sync_path.clone();
             std::fs::create_dir_all(&sync_path).context("failed to create sync directory")?;
             self.start_fs_watcher().await?;
-            self.sync_paths(vec![sync_path], crate::drive::sync::SyncMode::FullHierarchy)
-                .await?;
             return Ok(());
         }
 

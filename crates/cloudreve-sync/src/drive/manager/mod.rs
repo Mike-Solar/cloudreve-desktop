@@ -167,7 +167,8 @@ impl DriveManager {
             }
         }
 
-        let mut write_guard = self.drives.write().await;
+        // Create and start the mount before acquiring the write lock
+        // to avoid holding the lock during potentially long-running operations
         let mut mount = Mount::new(
             config.clone(),
             self.inventory.clone(),
@@ -185,6 +186,23 @@ impl DriveManager {
             .spawn_remote_event_processor(mount_arc.clone())
             .await;
         mount_arc.spawn_props_refresh_task().await;
+
+        // Spawn initial sync in the background so add_drive returns immediately
+        let mount_for_sync = mount_arc.clone();
+        tokio::spawn(async move {
+            let sync_path = mount_for_sync.config.read().await.sync_path.clone();
+            tracing::info!(target: "drive", id = %mount_for_sync.id, path = %sync_path.display(), "Starting background initial sync");
+            if let Err(e) = mount_for_sync
+                .sync_paths(vec![sync_path], crate::drive::sync::SyncMode::FullHierarchy)
+                .await
+            {
+                tracing::error!(target: "drive", id = %mount_for_sync.id, error = ?e, "Background initial sync failed");
+            } else {
+                tracing::info!(target: "drive", id = %mount_for_sync.id, "Background initial sync completed");
+            }
+        });
+
+        let mut write_guard = self.drives.write().await;
         let id = mount_arc.id.clone();
         write_guard.insert(id.clone(), mount_arc);
         Ok(id)

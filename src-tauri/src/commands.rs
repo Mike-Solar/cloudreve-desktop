@@ -14,6 +14,7 @@ use tauri::{
     webview::{WebviewWindow, WebviewWindowBuilder},
     AppHandle, Manager, State, WebviewUrl,
 };
+#[cfg(windows)]
 use tauri_plugin_frame::WebviewWindowExt;
 use tauri_plugin_positioner::{Position, WindowExt};
 use uuid::Uuid;
@@ -630,6 +631,7 @@ fn show_drive_window_internal(app: &AppHandle, title: &str, url_path: &str) {
                 let _ = window.set_effects(effects);
             }
             move_window_safely(&window, Position::Center, "add-drive");
+            #[cfg(windows)]
             let _ = window.create_overlay_titlebar();
             let _ = window.show();
             let _ = window.set_focus();
@@ -693,6 +695,7 @@ pub fn show_settings_window_impl(app: &AppHandle) {
                 let _ = window.set_effects(effects);
             }
             move_window_safely(&window, Position::Center, "settings");
+            #[cfg(windows)]
             let _ = window.create_overlay_titlebar();
             let _ = window.show();
             let _ = window.set_focus();

@@ -38,13 +38,13 @@ urlencoding = "2.1"
 # Main sync service crate
 cloudreve-sync = { path = "../crates/cloudreve-sync" }
 
-tauri-plugin-frame = "1.1.6"
 tauri-plugin-http = "2"
 tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "2.4.9"
 tauri-plugin-dialog = "2.7.1"
 tauri-plugin-prevent-default = "4"
 tauri-plugin-os = "2"
+tauri-plugin-frame = "1.1.6"
 
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.58.0"

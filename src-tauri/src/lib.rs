@@ -8,8 +8,9 @@ use tauri::{
     async_runtime::spawn,
     menu::{Menu, MenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, Manager, RunEvent,
+    AppHandle, Emitter, Listener, Manager, RunEvent,
 };
+#[cfg(not(target_os = "macos"))]
 use tauri_plugin_deep_link::DeepLinkExt;
 use tokio::sync::OnceCell;
 
@@ -258,7 +259,8 @@ pub fn run() {
     // Initialize i18n (uses config language setting or falls back to system locale)
     init_i18n();
 
-    tauri::Builder::default()
+    #[allow(unused_mut)]
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
             tracing::info!("a new app instance was opened with {argv:?} and the deep link event was already triggered");
             if argv.len() > 1 {
@@ -268,8 +270,14 @@ pub fn run() {
             // when defining deep link schemes at runtime, you must also check `argv` here
         }))
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_frame::init())
+        .plugin(tauri_plugin_http::init());
+
+    #[cfg(windows)]
+    {
+        builder = builder.plugin(tauri_plugin_frame::init());
+    }
+
+    builder
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
@@ -281,8 +289,20 @@ pub fn run() {
             // Setup system tray
             setup_tray(app)?;
 
-            #[cfg(desktop)]
+            #[cfg(not(target_os = "macos"))]
             app.deep_link().register("cloudreve")?;
+
+            // Listen for deep-link events (macOS and Linux)
+            let app_handle = app.handle().clone();
+            app.listen("deep-link://new-url", move |event: tauri::Event| {
+                if let Ok(urls) = serde_json::from_str::<Vec<String>>(event.payload()) {
+                    if let Some(url) = urls.first() {
+                        tracing::info!(target: "main", "Received deep-link URL: {}", url);
+                        let _ = app_handle.emit("deeplink", url.clone());
+                        show_add_drive_window_impl(&app_handle);
+                    }
+                }
+            });
 
             // Spawn async setup task - this runs in the background
             // while the app continues to start

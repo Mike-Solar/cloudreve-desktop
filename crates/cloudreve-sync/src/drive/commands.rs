@@ -782,6 +782,38 @@ impl Mount {
         Ok(())
     }
 
+    pub async fn resolve_all_conflicts(
+        &self,
+        action: ConflictAction,
+    ) -> Result<(usize, usize)> {
+        let pending = self
+            .inventory
+            .query_pending_conflicts(Some(&self.id))
+            .context("failed to query pending conflicts")?;
+
+        let mut success = 0usize;
+        let mut failed = 0usize;
+
+        for conflict in pending {
+            let path = conflict.local_path.clone();
+            let file_id = conflict.id;
+            if let Err(e) = self.resolve_conflict(action, file_id, path).await {
+                tracing::error!(
+                    target: "drive::commands",
+                    id = %self.id,
+                    path = %conflict.local_path,
+                    error = %e,
+                    "Failed to resolve conflict during batch operation"
+                );
+                failed += 1;
+            } else {
+                success += 1;
+            }
+        }
+
+        Ok((success, failed))
+    }
+
     async fn process_fs_modify_name_event(&self, events: Vec<Event>) -> Result<()> {
         tracing::trace!(target: "drive::commands", count=events.len(), "Processing filesystem modify name event");
         for event in events {

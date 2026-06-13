@@ -330,6 +330,7 @@ pub fn run() {
             commands::get_sync_status,
             commands::get_status_summary,
             commands::resolve_conflict,
+            commands::resolve_all_conflicts,
             commands::get_drives_info,
             commands::get_file_icon,
             commands::show_file_in_explorer,

@@ -247,13 +247,15 @@ impl Client {
         store.access_token = Some(token.access_token.clone());
         store.refresh_token = Some(token.refresh_token.clone());
 
-        // Parse RFC3339 timestamps
-        if let Ok(exp) = DateTime::parse_from_rfc3339(&token.access_expires) {
-            store.access_token_expires = Some(exp.with_timezone(&Utc));
-        }
-        if let Ok(exp) = DateTime::parse_from_rfc3339(&token.refresh_expires) {
-            store.refresh_token_expires = Some(exp.with_timezone(&Utc));
-        }
+        let access_expires = DateTime::parse_from_rfc3339(&token.access_expires)
+            .map_err(|e| ApiError::InvalidToken(format!("Invalid access expiry: {}", e)))?
+            .with_timezone(&Utc);
+        let refresh_expires = DateTime::parse_from_rfc3339(&token.refresh_expires)
+            .map_err(|e| ApiError::InvalidToken(format!("Invalid refresh expiry: {}", e)))?
+            .with_timezone(&Utc);
+
+        store.access_token_expires = Some(access_expires);
+        store.refresh_token_expires = Some(refresh_expires);
 
         Ok(())
     }
@@ -344,7 +346,11 @@ impl Client {
         self.refresh_access_token().await
     }
 
-    /// Refresh the access token using the refresh token
+    /// Refresh the access token using the refresh token.
+    /// Cloudreve V4 uses `/session/token/refresh` for all refresh tokens,
+    /// including tokens originally obtained via OAuth. The OAuth token endpoint
+    /// `/session/oauth/token` only supports `authorization_code` grant and is
+    /// not used here.
     async fn refresh_access_token(&self) -> ApiResult<String> {
         let refresh_token = {
             let store = self.tokens.read().await;

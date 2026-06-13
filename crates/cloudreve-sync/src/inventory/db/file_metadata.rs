@@ -100,6 +100,16 @@ impl InventoryDb {
         row.map(FileMetadata::try_from).transpose()
     }
 
+    /// List all distinct drive IDs present in the inventory.
+    pub fn list_drive_ids(&self) -> Result<Vec<String>> {
+        let mut conn = self.connection()?;
+        file_metadata_dsl::file_metadata
+            .select(file_metadata_dsl::drive_id)
+            .distinct()
+            .load::<String>(&mut conn)
+            .context("Failed to list inventory drive IDs")
+    }
+
     /// Query files that are waiting for manual conflict resolution.
     ///
     /// `drive_id` is optional because the popup can show either a single drive

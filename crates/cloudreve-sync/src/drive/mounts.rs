@@ -41,6 +41,7 @@ use windows::Storage::Provider::StorageProviderSyncRootManager;
 type MountConnection = Connection<CallbackHandler>;
 #[cfg(not(windows))]
 type MountConnection = Connection<()>;
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DriveConfig {
     pub id: String,
@@ -671,14 +672,16 @@ impl Mount {
                 .context("faield to disconnect sync root")?;
         }
         self.task_queue.shutdown().await;
+        // Always clear inventory (including pending conflicts) before unregistering
+        // the sync root so metadata does not linger if unregister fails.
+        if let Err(e) = self.inventory.nuke_drive(&self.id) {
+            tracing::error!(target: "drive::mounts", id=%self.id, error=%e, "Failed to nuke drive inventory");
+        }
         if let Some(sync_root_id) = self.config.read().await.sync_root_id.as_ref() {
             if let Err(e) = sync_root_id.unregister() {
                 tracing::warn!(target: "drive::mounts", id=%self.id, error=%e, "Failed to unregister sync root");
                 return Err(anyhow::anyhow!("Failed to unregister sync root: {}", e));
             }
-        }
-        if let Err(e) = self.inventory.nuke_drive(&self.id) {
-            tracing::error!(target: "drive::mounts", id=%self.id, error=%e, "Failed to nuke drive");
         }
 
         Ok(())

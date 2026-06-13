@@ -301,7 +301,7 @@ struct SyncPlan {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum HashAlgorithm {
+pub(crate) enum HashAlgorithm {
     Md5,
     Sha1,
     Sha256,
@@ -319,7 +319,7 @@ impl HashAlgorithm {
         }
     }
 
-    fn as_str(self) -> &'static str {
+    pub(crate) fn as_str(self) -> &'static str {
         match self {
             Self::Md5 => "md5",
             Self::Sha1 => "sha1",
@@ -330,9 +330,9 @@ impl HashAlgorithm {
 }
 
 #[derive(Debug, Clone)]
-struct FileHashFingerprint {
-    algorithm: HashAlgorithm,
-    value: String,
+pub(crate) struct FileHashFingerprint {
+    pub(crate) algorithm: HashAlgorithm,
+    pub(crate) value: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -498,7 +498,7 @@ fn normalize_hash_key(key: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn remote_file_hash_fingerprint(remote: &FileResponse) -> Option<FileHashFingerprint> {
+pub(crate) fn remote_file_hash_fingerprint(remote: &FileResponse) -> Option<FileHashFingerprint> {
     const HASH_METADATA_KEYS: &[(&str, HashAlgorithm)] = &[
         ("md5", HashAlgorithm::Md5),
         ("hashmd5", HashAlgorithm::Md5),
@@ -520,6 +520,8 @@ fn remote_file_hash_fingerprint(remote: &FileResponse) -> Option<FileHashFingerp
     if let Some(metadata) = remote.metadata.as_ref() {
         for (key, value) in metadata {
             let normalized_key = normalize_hash_key(key);
+
+            // Exact key match (e.g. "md5", "sha256").
             for (hash_key, algorithm) in HASH_METADATA_KEYS {
                 if normalized_key == *hash_key {
                     if let Some(value) = normalize_hash_value(value) {
@@ -530,19 +532,26 @@ fn remote_file_hash_fingerprint(remote: &FileResponse) -> Option<FileHashFingerp
                     }
                 }
             }
+
+            // Generic keys like "hash" or "checksum" where the algorithm is
+            // inferred from the digest length.
+            if normalized_key == "hash" || normalized_key == "checksum" {
+                if let Some(fingerprint) = hash_fingerprint_from_value(value) {
+                    return Some(fingerprint);
+                }
+            }
         }
     }
 
-    // Some server responses may put a content entity/hash in primary_entity.
-    // Treat it as a hash only when it has a known digest length; otherwise it
-    // remains an opaque etag and is not safe for local-content equality.
-    remote
-        .primary_entity
-        .as_deref()
-        .and_then(hash_fingerprint_from_value)
+    // primary_entity is used as an opaque etag/entity identifier elsewhere
+    // (see cloud_file_to_metadata_entry and CrPlaceholder::with_remote_file).
+    // It is not a reliable content hash, so do not use it for equality checks;
+    // falling back to size comparison avoids false conflicts when the remote
+    // does not publish a real content hash.
+    None
 }
 
-async fn calculate_file_hash(path: PathBuf, algorithm: HashAlgorithm) -> Result<String> {
+pub(crate) async fn calculate_file_hash(path: PathBuf, algorithm: HashAlgorithm) -> Result<String> {
     task::spawn_blocking(move || -> Result<String> {
         let mut file = fs::File::open(&path)
             .with_context(|| format!("failed to open file {}", path.display()))?;
@@ -1279,11 +1288,27 @@ impl Mount {
         }
 
         let Some(remote_fingerprint) = remote_file_hash_fingerprint(remote) else {
+            // Remote does not expose a hash. Fall back to size comparison so
+            // identical files are not falsely reported as conflicts.
+            let local_size = local.file_size.unwrap_or(0);
+            let remote_size = remote.size as u64;
+            if local_size == remote_size {
+                tracing::info!(
+                    target: "drive::sync",
+                    id = %self.id,
+                    path = %path.display(),
+                    size = local_size,
+                    "Remote file has no hash but sizes match; treating as same content"
+                );
+                return Some(ExistingRemoteLocalFileDecision::SameContent);
+            }
             tracing::info!(
                 target: "drive::sync",
                 id = %self.id,
                 path = %path.display(),
-                "Remote file has no supported hash fingerprint; treating same-name local file as conflict"
+                local_size = local_size,
+                remote_size = remote_size,
+                "Remote file has no hash and sizes differ; treating same-name local file as conflict"
             );
             return Some(ExistingRemoteLocalFileDecision::Conflict);
         };

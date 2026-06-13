@@ -1,5 +1,7 @@
 import {
   Box,
+  Button,
+  ButtonGroup,
   IconButton,
   List,
   Typography,
@@ -12,7 +14,6 @@ import {
 } from "@mui/icons-material";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { platform } from "@tauri-apps/plugin-os";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
 import Settings from "../../common/icons/Settings";
@@ -126,17 +127,24 @@ export default function Popup() {
     }
   };
 
+  const handleResolveAll = async (action: "keep_remote" | "overwrite_remote") => {
+    try {
+      await invoke("resolve_all_conflicts", {
+        driveId: selectedDrive,
+        action,
+      });
+      fetchSummary();
+    } catch (error) {
+      console.error("Failed to resolve all conflicts:", error);
+    }
+  };
+
   const hasActiveTasks =
     summary?.active_tasks && summary.active_tasks.length > 0;
   const hasFinishedTasks =
     summary?.finished_tasks && summary.finished_tasks.length > 0;
-  // Windows already has shell/toast conflict actions; the popup entry is only
-  // for platforms where those native Windows affordances do not exist.
-  const canResolveConflictsInPopup = platform() !== "windows";
   const hasPendingConflicts =
-    canResolveConflictsInPopup &&
-    summary?.pending_conflicts &&
-    summary.pending_conflicts.length > 0;
+    summary?.pending_conflicts && summary.pending_conflicts.length > 0;
 
   return (
     <Box
@@ -222,20 +230,32 @@ export default function Popup() {
             {/* Pending Conflicts */}
             {hasPendingConflicts && (
               <>
-                <Typography
-                  variant="caption"
-                  color="warning.main"
+                <Box
                   sx={{
                     px: 2,
                     py: 1,
                     pb: 0,
-                    display: "block",
-                    fontWeight: 700,
-                    textTransform: "uppercase",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
                   }}
                 >
-                  {t("popup.conflicts", "Conflicts")}
-                </Typography>
+                  <Typography
+                    variant="caption"
+                    color="warning.main"
+                    sx={{ fontWeight: 700, textTransform: "uppercase" }}
+                  >
+                    {t("popup.conflicts", "Conflicts")}
+                  </Typography>
+                  <ButtonGroup size="small" variant="text" color="warning">
+                    <Button onClick={() => handleResolveAll("keep_remote")}>
+                      {t("popup.keepAllRemote", "Keep all remote")}
+                    </Button>
+                    <Button onClick={() => handleResolveAll("overwrite_remote")}>
+                      {t("popup.overwriteAllRemote", "Overwrite all remote")}
+                    </Button>
+                  </ButtonGroup>
+                </Box>
                 {summary?.pending_conflicts.map((conflict) => (
                   <ConflictItem
                     key={conflict.id}

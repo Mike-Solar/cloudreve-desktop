@@ -102,7 +102,51 @@ impl DriveManager {
 
         tracing::info!(target: "drive", count = count, "Loaded drive(s) from config");
 
+        // Remove inventory (including lingering conflicts) for drives that are no
+        // longer present in the configuration. This prevents stale metadata from
+        // accumulating when a drive is deleted externally or the config is reset.
+        self.cleanup_orphaned_inventory().await;
+
         Ok(())
+    }
+
+    /// Delete inventory rows for drives that exist in the database but are not
+    /// currently configured.
+    async fn cleanup_orphaned_inventory(&self) {
+        let configured_ids: std::collections::HashSet<String> = {
+            let read_guard = self.drives.read().await;
+            read_guard.keys().cloned().collect()
+        };
+
+        let inventory_ids = match self.inventory.list_drive_ids() {
+            Ok(ids) => ids,
+            Err(e) => {
+                tracing::warn!(
+                    target: "drive::manager",
+                    error = %e,
+                    "Failed to list inventory drive IDs during cleanup"
+                );
+                return;
+            }
+        };
+
+        for drive_id in inventory_ids {
+            if !configured_ids.contains(&drive_id) {
+                tracing::info!(
+                    target: "drive::manager",
+                    drive_id = %drive_id,
+                    "Removing orphaned inventory for drive no longer in config"
+                );
+                if let Err(e) = self.inventory.nuke_drive(&drive_id) {
+                    tracing::error!(
+                        target: "drive::manager",
+                        drive_id = %drive_id,
+                        error = %e,
+                        "Failed to remove orphaned inventory"
+                    );
+                }
+            }
+        }
     }
 
     /// Persist drive configurations to disk

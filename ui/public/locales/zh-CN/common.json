@@ -55,7 +55,9 @@
     "resolving": "正在处理...",
     "keepRemote": "保留远程版本",
     "overwriteRemote": "覆盖远程版本",
-    "saveAsNew": "另存为新文件"
+    "saveAsNew": "另存为新文件",
+    "keepAllRemote": "全部保留远程",
+    "overwriteAllRemote": "全部覆盖远程"
   },
   "settings": {
     "title": "设置",

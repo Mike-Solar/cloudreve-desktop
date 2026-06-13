@@ -303,6 +303,61 @@ pub async fn resolve_conflict(
         .map_err(|e| e.to_string())
 }
 
+/// Resolve all pending conflicts for a drive (or all drives if drive_id is None).
+#[tauri::command]
+pub async fn resolve_all_conflicts(
+    state: State<'_, AppStateHandle>,
+    drive_id: Option<String>,
+    action: String,
+) -> CommandResult<(usize, usize)> {
+    let app_state = state
+        .get()
+        .ok_or_else(|| "App not yet initialized".to_string())?;
+    let action = ConflictAction::from_str(&action)
+        .ok_or_else(|| format!("Invalid conflict action: {action}"))?;
+
+    let mut total_success = 0usize;
+    let mut total_failed = 0usize;
+
+    if let Some(id) = drive_id {
+        let drive = app_state
+            .drive_manager
+            .get_drive(&id)
+            .await
+            .ok_or_else(|| format!("Drive not found: {id}"))?;
+        let (s, f) = drive
+            .resolve_all_conflicts(action)
+            .await
+            .map_err(|e| e.to_string())?;
+        total_success += s;
+        total_failed += f;
+    } else {
+        let drives = app_state.drive_manager.list_drives().await;
+        for config in drives {
+            if let Some(drive) = app_state.drive_manager.get_drive(&config.id).await {
+                match drive.resolve_all_conflicts(action).await {
+                    Ok((s, f)) => {
+                        total_success += s;
+                        total_failed += f;
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            target: "commands",
+                            drive_id = %config.id,
+                            error = %e,
+                            "Failed to resolve all conflicts for drive"
+                        );
+                        // We intentionally continue with other drives rather
+                        // than failing the whole batch.
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((total_success, total_failed))
+}
+
 /// Get all drives with their status information for the settings UI
 #[tauri::command]
 pub async fn get_drives_info(state: State<'_, AppStateHandle>) -> CommandResult<Vec<DriveInfo>> {
